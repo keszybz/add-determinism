@@ -1,14 +1,16 @@
 use std::env;
 
-use anyhow::Result;
-use std::fs::File;
-use std::io::{BufWriter,Read,Write,Seek};
+use anyhow::{Context, Result, anyhow};
+use std::fs;
+use std::io::{BufWriter, ErrorKind, Read, Write, Seek};
+use std::os::linux::fs::MetadataExt;
+use std::os::unix::fs as unix_fs;
 use std::path::Path;
 
 pub const MAGIC: &[u8] = b"!<arch>\n";
 
 pub const FILE_HEADER_LENGTH: usize = 60;
-pub const FILE_HEADER_MAGIC: &[u8] = &[0o140, 0o12];
+pub const FILE_HEADER_MAGIC: &[u8] = &[0o140, 0o012];
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -23,29 +25,50 @@ fn main() -> Result<()> {
     let file_path = Path::new(&args[1]);
     dbg!(file_path);
 
-    let mut input = File::open(file_path)?;
+    let mut input = fs::File::open(file_path)
+        .with_context(|| format!("Cannot open {:?}", file_path))?;
     // I tried using BufReader, but it returns short reads occasionally.
 
     let mut buf = [0; MAGIC.len()];
     input.read_exact(&mut buf)?;
     if buf != MAGIC {
-        println!("{:?}: wrong magic ({:?})", file_path, buf);
+        println!("{}: wrong magic ({:?})", file_path.display(), buf);
         return Ok(())
     }
 
     let input_file_name = match file_path.file_name().unwrap().to_str() {
         Some(name) => name,
         None => {
-            println!("{:?}: invalid file name", file_path);
+            println!("Invalid file name {:?}", file_path);
             return Ok(());
         }
     };
 
+    let input_metadata = input.metadata()?;
+
     let out_path = file_path.with_file_name(format!(".#.{}.tmp", input_file_name));
-    let mut output = BufWriter::new(File::create(out_path)?);
+
+    let mut options = fs::File::options();
+    options.write(true).create_new(true);
+
+    let output = match options.open(&out_path) {
+        Ok(some) => some,
+        Err(e) => {
+            if e.kind() != ErrorKind::AlreadyExists {
+                return Err(anyhow!("{:?}: cannot open temporary file: {}", out_path, e));
+            }
+
+            println!("{}: stale temporary file found, removing", out_path.display());
+            fs::remove_file(&out_path)?;
+            options.open(&out_path)?
+        }
+    };
+
+    let mut output = BufWriter::new(output);
+    let mut have_mod = false;
 
     output.write(&buf)?;
-    
+
     loop {
         let pos = input.stream_position()?;
         let mut buf = [0; FILE_HEADER_LENGTH];
@@ -70,7 +93,7 @@ fn main() -> Result<()> {
         // 40     47     File mode                 Octal
         // 48     57     File size in bytes        Decimal
         // 58     59     File magic                \140\012
-        
+
         if &buf[58..] != FILE_HEADER_MAGIC {
             println!("{:?}: wrong magic in file header at offset {}: {:?} != {:?}",
                      file_path, pos, &buf[58..], FILE_HEADER_MAGIC);
@@ -102,11 +125,13 @@ fn main() -> Result<()> {
 
             if mtime > source_date_epoch.unwrap_or(0) {
                 buf[16..28].copy_from_slice(source_date_epoch_str.as_bytes());
+                have_mod = true;
             }
 
             if uid != 0 || gid != 0 {
                 buf[28..34].copy_from_slice(b"0     ");
                 buf[34..40].copy_from_slice(b"0     ");
+                have_mod = true;
             }
         }
 
@@ -121,6 +146,30 @@ fn main() -> Result<()> {
     }
 
     output.flush()?;
-    
+
+    if have_mod {
+        let output = output.into_inner()?;
+
+        output.set_permissions(input_metadata.permissions())?;
+        output.set_modified(input_metadata.modified()?)?;
+
+        match unix_fs::lchown(&out_path, Some(input_metadata.st_uid()), Some(input_metadata.st_gid())) {
+            Ok(()) => {},
+            Err(e) => {
+                 if e.kind() == ErrorKind::PermissionDenied {
+                     println!("{:?}: cannot change file ownership, ignoring", file_path);
+                 } else {
+                     return Err(anyhow!("{:?}: cannot change file ownership: {}", file_path, e));
+                 }
+            },
+        }
+
+        println!("{:?}: replacing with normalized version", file_path);
+        fs::rename(&out_path, file_path)?;
+    } else {
+        println!("{:?}: discarding modified version", file_path);
+        fs::remove_file(out_path)?;
+    }
+
     Ok(())
 }
