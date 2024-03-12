@@ -1,66 +1,97 @@
-use std::env;
+mod simplelog;
 
 use anyhow::{Context, Result, anyhow};
+use clap::Parser;
+use log::{debug, info, warn, LevelFilter};
+use std::env;
 use std::fs;
 use std::io::{BufWriter, ErrorKind, Read, Write, Seek};
 use std::os::linux::fs::MetadataExt;
 use std::os::unix::fs as unix_fs;
-use std::path::Path;
+use std::path::{Path,PathBuf};
 
 pub const MAGIC: &[u8] = b"!<arch>\n";
 
 pub const FILE_HEADER_LENGTH: usize = 60;
 pub const FILE_HEADER_MAGIC: &[u8] = &[0o140, 0o012];
 
+#[derive(Debug)]
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Options {
+    /// Paths to operate on
+    #[arg(required=true)]
+    args: Vec<PathBuf>,
+
+    /// Turn on debugging output
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Store source date epoch here convenience
+    #[arg(long, hide=true)]
+    source_date_epoch: Option<u64>,
+}
+
 fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
+    let mut options = Options::parse();
 
-    let source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
-        Ok(val) => Some(val.parse::<u64>()?),
-        Err(_) => None,
-    };
+    dbg!(&options);
 
-    let source_date_epoch_str = format!("{:<12}", source_date_epoch.unwrap_or(0));
+    let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
+    simplelog::init_with_level(log_level)?;
 
-    let file_path = Path::new(&args[1]);
-    dbg!(file_path);
+    if options.source_date_epoch.is_none() {
+        options.source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
+            Ok(val) => Some(val.parse::<u64>()?),
+            Err(_) => None,
+        };
+    }
+    debug!("SOURCE_DATE_EPOCH timestamp: {}", options.source_date_epoch.unwrap_or(0));
 
-    let mut input = fs::File::open(file_path)
-        .with_context(|| format!("Cannot open {:?}", file_path))?;
+    for input_path in &options.args {
+        process_ar(&options, input_path).unwrap_or_else(|err| {
+            warn!("Failed to process file: {}", err);
+        });
+    }
+
+    Ok(())
+}
+
+fn process_ar(options: &Options, input_path: &Path) -> Result<()> {
+    let mut input = fs::File::open(input_path)
+        .with_context(|| format!("Cannot open {:?}", input_path))?;
     // I tried using BufReader, but it returns short reads occasionally.
 
     let mut buf = [0; MAGIC.len()];
     input.read_exact(&mut buf)?;
     if buf != MAGIC {
-        println!("{}: wrong magic ({:?})", file_path.display(), buf);
-        return Ok(())
+        return Err(anyhow!("{}: wrong magic ({:?})", input_path.display(), buf));
     }
 
-    let input_file_name = match file_path.file_name().unwrap().to_str() {
+    let input_file_name = match input_path.file_name().unwrap().to_str() {
         Some(name) => name,
         None => {
-            println!("Invalid file name {:?}", file_path);
-            return Ok(());
+            return Err(anyhow!("Invalid file name {:?}", input_path));
         }
     };
 
     let input_metadata = input.metadata()?;
 
-    let out_path = file_path.with_file_name(format!(".#.{}.tmp", input_file_name));
+    let out_path = input_path.with_file_name(format!(".#.{}.tmp", input_file_name));
 
-    let mut options = fs::File::options();
-    options.write(true).create_new(true);
+    let mut openopts = fs::File::options();
+    openopts.write(true).create_new(true);
 
-    let output = match options.open(&out_path) {
+    let output = match openopts.open(&out_path) {
         Ok(some) => some,
         Err(e) => {
             if e.kind() != ErrorKind::AlreadyExists {
-                return Err(anyhow!("{:?}: cannot open temporary file: {}", out_path, e));
+                return Err(anyhow!("{}: cannot open temporary file: {}", out_path.display(), e));
             }
 
-            println!("{}: stale temporary file found, removing", out_path.display());
+            debug!("{}: stale temporary file found, removing", out_path.display());
             fs::remove_file(&out_path)?;
-            options.open(&out_path)?
+            openopts.open(&out_path)?
         }
     };
 
@@ -73,14 +104,14 @@ fn main() -> Result<()> {
         let pos = input.stream_position()?;
         let mut buf = [0; FILE_HEADER_LENGTH];
 
-        println!("{:?}: reading file header at offset {}", file_path, pos);
+        debug!("{}: reading file header at offset {}", input_path.display(), pos);
 
         match input.read(&mut buf)? {
             0 => break,
             FILE_HEADER_LENGTH => {},
             n => {
-                println!("{:?}: short read of {} bytes at offset {}", file_path, n, pos);
-                return Ok(());
+                return Err(anyhow!("{}: short read of {} bytes at offset {}",
+                                   input_path.display(), n, pos));
             }
         }
 
@@ -95,9 +126,8 @@ fn main() -> Result<()> {
         // 58     59     File magic                \140\012
 
         if &buf[58..] != FILE_HEADER_MAGIC {
-            println!("{:?}: wrong magic in file header at offset {}: {:?} != {:?}",
-                     file_path, pos, &buf[58..], FILE_HEADER_MAGIC);
-            return Ok(())
+            return Err(anyhow!("{}: wrong magic in file header at offset {}: {:?} != {:?}",
+                               input_path.display(), pos, &buf[58..], FILE_HEADER_MAGIC));
         }
 
         let name = std::str::from_utf8(&buf[0..16])?.trim_end_matches(' ');
@@ -107,7 +137,7 @@ fn main() -> Result<()> {
 
         if name == "//" {
             // System V/GNU table of long filenames
-            println!("{:?}: long filename index, size={}", file_path, size);
+            debug!("{}: long filename index, size={}", input_path.display(), size);
         } else {
             let mtime = std::str::from_utf8(&buf[16..28])?.trim_end_matches(' ');
             let mtime = u64::from_str_radix(mtime, 10)?;
@@ -121,9 +151,12 @@ fn main() -> Result<()> {
             let mode = std::str::from_utf8(&buf[40..48])?.trim_end_matches(' ');
             let mode = u64::from_str_radix(mode, 8)?;
 
-            println!("{:?}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}", file_path, name, mtime, uid, gid, mode, size);
+            debug!("{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
+                   input_path.display(), name, mtime, uid, gid, mode, size);
 
-            if mtime > source_date_epoch.unwrap_or(0) {
+            if mtime > options.source_date_epoch.unwrap_or(0) {
+                let source_date_epoch_str = format!("{:<12}", options.source_date_epoch.unwrap_or(0));
+
                 buf[16..28].copy_from_slice(source_date_epoch_str.as_bytes());
                 have_mod = true;
             }
@@ -157,17 +190,17 @@ fn main() -> Result<()> {
             Ok(()) => {},
             Err(e) => {
                  if e.kind() == ErrorKind::PermissionDenied {
-                     println!("{:?}: cannot change file ownership, ignoring", file_path);
+                     warn!("{}: cannot change file ownership, ignoring", input_path.display());
                  } else {
-                     return Err(anyhow!("{:?}: cannot change file ownership: {}", file_path, e));
+                     return Err(anyhow!("{}: cannot change file ownership: {}", input_path.display(), e));
                  }
             },
         }
 
-        println!("{:?}: replacing with normalized version", file_path);
-        fs::rename(&out_path, file_path)?;
+        info!("{}: replacing with normalized version", input_path.display());
+        fs::rename(&out_path, input_path)?;
     } else {
-        println!("{:?}: discarding modified version", file_path);
+        debug!("{}: discarding modified version", input_path.display());
         fs::remove_file(out_path)?;
     }
 
