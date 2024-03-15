@@ -5,7 +5,6 @@ use std::io::{BufWriter, ErrorKind, Read, Write, Seek};
 use std::os::linux::fs::MetadataExt;
 use std::os::unix::fs as unix_fs;
 use std::path::Path;
-use walkdir;
 use crate::options;
 
 const MAGIC: &[u8] = b"!<arch>\n";
@@ -58,7 +57,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<()> {
     let mut output = BufWriter::new(output);
     let mut have_mod = false;
 
-    output.write(&buf)?;
+    output.write_all(&buf)?;
 
     loop {
         let pos = input.stream_position()?;
@@ -93,23 +92,23 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<()> {
         let name = std::str::from_utf8(&buf[0..16])?.trim_end_matches(' ');
 
         let size = std::str::from_utf8(&buf[48..58])?.trim_end_matches(' ');
-        let size = u32::from_str_radix(size, 10)?;
+        let size = size.parse::<u32>()?;
 
         if name == "//" {
             // System V/GNU table of long filenames
             debug!("{}: long filename index, size={}", input_path.display(), size);
         } else {
             let mtime = std::str::from_utf8(&buf[16..28])?.trim_end_matches(' ');
-            let mtime = u64::from_str_radix(mtime, 10)?;
+            let mtime = mtime.parse::<u64>()?;
 
             let uid = std::str::from_utf8(&buf[28..34])?.trim_end_matches(' ');
-            let uid = u64::from_str_radix(uid, 10)?;
+            let uid = uid.parse::<u64>()?;
 
             let gid = std::str::from_utf8(&buf[34..40])?.trim_end_matches(' ');
-            let gid = u64::from_str_radix(gid, 10)?;
+            let gid = gid.parse::<u64>()?;
 
             let mode = std::str::from_utf8(&buf[40..48])?.trim_end_matches(' ');
-            let mode = u64::from_str_radix(mode, 8)?;
+            let mode = mode.parse::<u64>()?;
 
             debug!("{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
                    input_path.display(), name, mtime, uid, gid, mode, size);
@@ -128,14 +127,14 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<()> {
             }
         }
 
-        output.write(&buf)?;
+        output.write_all(&buf)?;
 
         let padded_size = size + size % 2;
 
         let mut buf = vec![0; padded_size.try_into().unwrap()];
         input.read_exact(&mut buf)?;
 
-        output.write(&buf)?;
+        output.write_all(&buf)?;
     }
 
     output.flush()?;

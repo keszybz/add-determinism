@@ -5,7 +5,6 @@ mod simplelog;
 use anyhow::Result;
 use log::{debug, warn};
 use std::path::Path;
-use walkdir;
 
 pub struct Processor {
     filter: fn(&walkdir::DirEntry) -> Result<bool>,
