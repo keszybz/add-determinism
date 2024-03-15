@@ -165,3 +165,19 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_a() {
+        assert!( filter(Path::new("/some/path/libfoobar.a")).unwrap());
+        assert!(!filter(Path::new("/some/path/libfoobar.aa")).unwrap());
+        assert!( filter(Path::new("/some/path/libfoobar.a.a")).unwrap());
+        assert!(!filter(Path::new("/some/path/libfoobara")).unwrap());
+        assert!(!filter(Path::new("/some/path/a")).unwrap());
+        assert!(!filter(Path::new("/some/path/a_a")).unwrap());
+        assert!(!filter(Path::new("/")).unwrap());
+    }
+}
