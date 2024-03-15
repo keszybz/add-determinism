@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::options;
 
 pub struct Processor {
-    filter: fn(&walkdir::DirEntry) -> Result<bool>,
+    filter: fn(&Path) -> Result<bool>,
     process: fn(&options::Options, &Path) -> Result<()>,
 }
 
@@ -28,7 +28,7 @@ pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Res
             }
 
             for processor in PROCESSORS {
-                if (processor.filter)(&entry)? {
+                if (processor.filter)(entry.path())? {
                     (processor.process)(options, entry.path()).unwrap_or_else(|err| {
                         warn!("Failed to process file: {}", err);
                     });

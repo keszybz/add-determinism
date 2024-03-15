@@ -12,8 +12,8 @@ const MAGIC: &[u8] = b"!<arch>\n";
 const FILE_HEADER_LENGTH: usize = 60;
 const FILE_HEADER_MAGIC: &[u8] = &[0o140, 0o012];
 
-pub fn filter(entry: &walkdir::DirEntry) -> Result<bool> {
-    Ok(entry.path().extension().is_some_and(|x| x == "a"))
+pub fn filter(path: &Path) -> Result<bool> {
+    Ok(path.extension().is_some_and(|x| x == "a"))
 }
 
 pub fn process(options: &options::Options, input_path: &Path) -> Result<()> {
