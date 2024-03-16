@@ -11,6 +11,7 @@ fn main() -> Result<()> {
     for input_path in &options.args {
         processors::process_file_or_dir(&options, input_path).unwrap_or_else(|err| {
             warn!("Failed to process file: {}", err);
+            0
         });
     }
 

@@ -3,6 +3,7 @@ use clap::Parser;
 use log::{debug, LevelFilter};
 use std::env;
 use std::path::PathBuf;
+
 use crate::simplelog;
 
 #[derive(Debug)]

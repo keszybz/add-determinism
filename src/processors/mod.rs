@@ -1,4 +1,4 @@
-mod ar;
+pub mod ar;
 
 use anyhow::Result;
 use log::{debug, warn};
@@ -6,16 +6,21 @@ use std::path::Path;
 use crate::options;
 
 pub struct Processor {
+    /// Return true if the given path looks like it should be processed.
     filter: fn(&Path) -> Result<bool>,
-    process: fn(&options::Options, &Path) -> Result<()>,
+
+    /// Process file and return true if modifications were made.
+    process: fn(&options::Options, &Path) -> Result<bool>,
 }
 
 const PROCESSORS: [Processor; 1] = [
     Processor { filter: ar::filter, process: ar::process },
 ];
 
-pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Result<()> {
+pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Result<u64> {
     debug!("Looking at path {:?}…", input_path);
+
+    let mut modifications = 0;
 
     for entry in walkdir::WalkDir::new(input_path)
         .follow_links(false)
@@ -29,12 +34,17 @@ pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Res
 
             for processor in PROCESSORS {
                 if (processor.filter)(entry.path())? {
-                    (processor.process)(options, entry.path()).unwrap_or_else(|err| {
-                        warn!("Failed to process file: {}", err);
-                    });
+                    match (processor.process)(options, entry.path()) {
+                        Err(err) => {
+                            warn!("Failed to process file: {}", err);
+                        },
+                        Ok(modified) => {
+                            modifications += modified as u64;
+                        },
+                    }
                 }
             }
         }
 
-    Ok(())
+    Ok(modifications)
 }

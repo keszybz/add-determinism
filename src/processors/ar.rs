@@ -16,7 +16,7 @@ pub fn filter(path: &Path) -> Result<bool> {
     Ok(path.extension().is_some_and(|x| x == "a"))
 }
 
-pub fn process(options: &options::Options, input_path: &Path) -> Result<()> {
+pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
     let mut input = fs::File::open(input_path)
         .with_context(|| format!("Cannot open {:?}", input_path))?;
     // I tried using BufReader, but it returns short reads occasionally.
@@ -163,7 +163,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<()> {
         fs::remove_file(out_path)?;
     }
 
-    Ok(())
+    Ok(have_mod)
 }
 
 #[cfg(test)]
