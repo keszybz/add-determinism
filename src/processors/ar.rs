@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
 use anyhow::{Context, Result, anyhow};
 use log::{debug, info, warn};
 use std::fs;

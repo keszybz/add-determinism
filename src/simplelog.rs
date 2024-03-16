@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
 use log::debug;
 use std::io::{self, Write};
 
