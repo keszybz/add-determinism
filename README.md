@@ -2,7 +2,7 @@
 
 This crate provides a binary `add-determinism` that one or more paths,
 and will recursively process those paths,
-attempting to run the processors on any files with extensions that match.
+attempting to run the handlers on any files with extensions that match.
 
 For each processed file, a temporary file is opened,
 the contents are rewritten,

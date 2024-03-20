@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-mod processors;
+mod handlers;
 mod options;
 mod simplelog;
 
@@ -11,7 +11,7 @@ fn main() -> Result<()> {
     let options = options::Options::make()?;
 
     for input_path in &options.args {
-        processors::process_file_or_dir(&options, input_path).unwrap_or_else(|err| {
+        handlers::process_file_or_dir(&options, input_path).unwrap_or_else(|err| {
             warn!("Failed to process file: {}", err);
             0
         });

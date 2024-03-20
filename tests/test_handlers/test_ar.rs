@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use add_determinism::options::Options;
-use add_determinism::processors::ar;
+use add_determinism::handlers::ar;
 use add_determinism::simplelog;
 
 const OPTS: Options = Options{
