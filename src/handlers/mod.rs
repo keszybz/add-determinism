@@ -120,11 +120,14 @@ impl<'a> InputOutputHelper<'a> {
         let input_metadata = self.input.metadata()?;
 
         if have_mod {
-            let output = self.output.as_ref().unwrap();
             let output_path = self.output_path.as_ref().unwrap();
 
-            output.set_permissions(input_metadata.permissions())?;
-            output.set_modified(input_metadata.modified()?)?;
+            if let Some(output) = self.output.as_ref() {
+                output.set_permissions(input_metadata.permissions())?;
+                output.set_modified(input_metadata.modified()?)?;
+            } else if !output_path.exists() {
+                return Ok(false);
+            }
 
             match unix_fs::lchown(output_path, Some(input_metadata.st_uid()), Some(input_metadata.st_gid())) {
                 Ok(()) => {},
