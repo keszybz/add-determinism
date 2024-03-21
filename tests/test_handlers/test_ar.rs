@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use add_determinism::options::Options;
-use add_determinism::handlers::ar;
+use add_determinism::handlers::{FileProcess, ar};
 use add_determinism::simplelog;
 
 const OPTS: Options = Options{
@@ -34,7 +34,7 @@ fn test_libempty() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar::process(&OPTS, &*input).unwrap(), false);
+    assert_eq!(FileProcess::process(&OPTS, &*input, &ar::handler).unwrap(), false);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -50,7 +50,7 @@ fn test_testrelro() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar::process(&OPTS, &*input).unwrap(), true);
+    assert_eq!(FileProcess::process(&OPTS, &*input, &ar::handler).unwrap(), true);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -67,7 +67,7 @@ fn test_testrelro_c() {
 
     let orig = input.metadata().unwrap();
 
-    assert!(ar::process(&OPTS, &*input).is_err());
+    assert!(FileProcess::process(&OPTS, &*input, &ar::handler).is_err());
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -83,7 +83,7 @@ fn test_testrelro_fixed() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar::process(&OPTS, &*input).unwrap(), false);
+    assert_eq!(FileProcess::process(&OPTS, &*input, &ar::handler).unwrap(), false);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
