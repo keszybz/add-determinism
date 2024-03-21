@@ -122,12 +122,25 @@ impl<'a> InputOutputHelper<'a> {
         if have_mod {
             let output_path = self.output_path.as_ref().unwrap();
 
-            if let Some(output) = self.output.as_ref() {
-                output.set_permissions(input_metadata.permissions())?;
-                output.set_modified(input_metadata.modified()?)?;
-            } else if !output_path.exists() {
-                return Ok(false);
+            let mut output = self.output.as_ref();
+            let fallback_output;
+            if output.is_none() {
+                fallback_output = match File::open(output_path) {
+                    Ok(some) => Some(some),
+                    Err(e) => {
+                        if e.kind() == ErrorKind::NotFound {
+                            return Ok(false); // no modifications and nothing to do
+                        } else {
+                            return Err(anyhow!("{}: cannot reopen temporary file: {}", output_path.display(), e));
+                        }
+                    },
+                };
+                output = fallback_output.as_ref();
             }
+            let output = output.unwrap();
+
+            output.set_permissions(input_metadata.permissions())?;
+            output.set_modified(input_metadata.modified()?)?;
 
             match unix_fs::lchown(output_path, Some(input_metadata.st_uid()), Some(input_metadata.st_gid())) {
                 Ok(()) => {},

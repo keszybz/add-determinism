@@ -24,7 +24,7 @@ fn test_adapters() {
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
     assert!(orig.created().unwrap() <= new.created().unwrap());
-    // assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
+    assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_ne!(orig.st_ino(), new.st_ino());
 }
 
@@ -41,7 +41,7 @@ fn test_adapters_opt_1() {
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
     assert!(orig.created().unwrap() <= new.created().unwrap());
-    // assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
+    assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_ne!(orig.st_ino(), new.st_ino());
 }
 
@@ -58,6 +58,6 @@ fn test_testrelro_fixed() {
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
-    // assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
+    assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_eq!(orig.st_ino(), new.st_ino());
 }
