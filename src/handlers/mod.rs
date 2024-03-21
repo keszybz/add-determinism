@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 pub mod ar;
+pub mod pyc;
 
 use anyhow::{Context, Result, anyhow};
 use log::{debug, info, warn};
@@ -21,8 +22,9 @@ pub struct Processor {
     process: fn(&options::Options, &Path) -> Result<bool>,
 }
 
-const PROCESSORS: [Processor; 1] = [
+const PROCESSORS: [Processor; 2] = [
     Processor { filter: ar::filter, process: ar::process },
+    Processor { filter: pyc::filter, process: pyc::process },
 ];
 
 pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Result<u64> {
