@@ -1,30 +1,15 @@
-use anyhow::Result;
-use std::fs;
 use std::os::linux::fs::MetadataExt;
-use std::path::{Path, PathBuf};
-use tempfile::TempDir;
 
 use add_determinism::options::Options;
 use add_determinism::handlers::ar;
-use add_determinism::simplelog;
+
+use super::prepare_dir;
 
 const OPTS: Options = Options{
     args: vec![],
     verbose: false,
     source_date_epoch: Some(111),
 };
-
-#[ctor::ctor]
-fn init() {
-    simplelog::init_with_level(log::LevelFilter::Debug).unwrap();
-}
-
-fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {
-    let dir = TempDir::new()?;
-    let input_path = dir.path().join(Path::new(path).file_name().unwrap());
-    fs::copy(path, &input_path)?;
-    Ok((Box::new(dir), Box::new(input_path)))
-}
 
 #[test]
 fn test_libempty() {
