@@ -18,11 +18,11 @@ pub struct Processor {
     filter: fn(&Path) -> Result<bool>,
 
     /// Process file and return true if modifications were made.
-    handler: fn(&mut FileProcess) -> Result<(PathBuf, File, bool)>,
+    process: fn(&options::Options, &Path) -> Result<bool>,
 }
 
 const PROCESSORS: [Processor; 1] = [
-    Processor { filter: ar::filter, handler: ar::handler },
+    Processor { filter: ar::filter, process: ar::process },
 ];
 
 pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Result<u64> {
@@ -42,7 +42,7 @@ pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Res
 
             for processor in PROCESSORS {
                 if (processor.filter)(entry.path())? {
-                    match FileProcess::process(options, entry.path(), &processor.handler) {
+                    match (processor.process)(options, entry.path()) {
                         Err(err) => {
                             warn!("Failed to process file: {}", err);
                         },
@@ -57,41 +57,32 @@ pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Res
     Ok(modifications)
 }
 
-pub struct FileProcess<'a> {
-    options: &'a options::Options,
-
+pub struct InputOutputHelper<'a> {
     input_path: &'a Path,
     input: File,
+
+    output_path: Option<PathBuf>,
+    output: Option<File>,
 }
 
-impl<'a> FileProcess<'a> {
-    pub fn new(
-        options: &'a options::Options,
-        input_path: &'a Path,
-    ) -> Result<Self> {
+impl<'a> InputOutputHelper<'a> {
+    pub fn new(input_path: &'a Path) -> Result<Self> {
 
         let input = File::open(input_path)
             .with_context(|| format!("Cannot open {:?}", input_path))?;
         // I tried using BufReader, but it returns short reads occasionally.
 
-        Ok(FileProcess {
-            options,
+        Ok(InputOutputHelper {
             input_path,
             input,
+            output_path: None,
+            output: None,
         })
     }
 
-    pub fn process(
-        options: &'a options::Options,
-        input_path: &'a Path,
-        handler: &dyn Fn(&mut FileProcess) -> Result<(PathBuf, File, bool)>,
-    ) -> Result<bool> {
-
-        let mut fp = FileProcess::new(options, input_path)?;
-        fp.process_and_replace(handler)
-    }
-
-    pub fn open_output(&mut self) -> Result<(PathBuf, File)> {
+    pub fn open_output(&mut self) -> Result<()> {
+        assert!(self.output_path.is_none());
+        assert!(self.output.is_none());
 
         let input_file_name = match self.input_path.file_name().unwrap().to_str() {
             Some(name) => name,
@@ -117,28 +108,23 @@ impl<'a> FileProcess<'a> {
                 openopts.open(&output_path)?
             }
         };
+        self.output_path = Some(output_path);
+        self.output = Some(output);
 
-        // We give out the open file and expect to get it back later
-        Ok((output_path, output))
+        Ok(())
     }
 
-    pub fn process_and_replace(
-        &mut self,
-        handler: &dyn Fn(&mut FileProcess) -> Result<(PathBuf, File, bool)>,
-    ) -> Result<bool> {
-
+    pub fn finalize(&mut self, have_mod: bool) -> Result<bool> {
         let input_metadata = self.input.metadata()?;
 
-        // We either get an error or the output is opened.
-        // If have_mod is false, we get rid of the file.
-        // If have_mod is true, we replace the orignal with the new version.
-        let (output_path, output, have_mod) = handler(self)?;
-
         if have_mod {
+            let output = self.output.as_ref().unwrap();
+            let output_path = self.output_path.as_ref().unwrap();
+
             output.set_permissions(input_metadata.permissions())?;
             output.set_modified(input_metadata.modified()?)?;
 
-            match unix_fs::lchown(&output_path, Some(input_metadata.st_uid()), Some(input_metadata.st_gid())) {
+            match unix_fs::lchown(output_path, Some(input_metadata.st_uid()), Some(input_metadata.st_gid())) {
                 Ok(()) => {},
                 Err(e) => {
                     if e.kind() == ErrorKind::PermissionDenied {
@@ -150,8 +136,9 @@ impl<'a> FileProcess<'a> {
             }
 
             info!("{}: replacing with normalized version", self.input_path.display());
-            fs::rename(&output_path, self.input_path)?;
-        } else {
+            fs::rename(output_path, self.input_path)?;
+
+        } else if let Some(output_path) = &self.output_path {
             debug!("{}: discarding modified version", self.input_path.display());
             fs::remove_file(output_path)?;
         }

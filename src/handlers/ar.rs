@@ -2,11 +2,11 @@
 
 use anyhow::{Result, anyhow};
 use log::debug;
-use std::fs::File;
 use std::io::{BufWriter, Read, Write, Seek};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::handlers::FileProcess;
+use crate::handlers::InputOutputHelper;
+use crate::options;
 
 const MAGIC: &[u8] = b"!<arch>\n";
 
@@ -17,8 +17,9 @@ pub fn filter(path: &Path) -> Result<bool> {
     Ok(path.extension().is_some_and(|x| x == "a"))
 }
 
-pub fn handler(fp: &mut FileProcess) -> Result<(PathBuf, File, bool)> {
+pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
     let mut have_mod = false;
+    let mut fp = InputOutputHelper::new(input_path)?;
 
     let mut buf = [0; MAGIC.len()];
     fp.input.read_exact(&mut buf)?;
@@ -26,8 +27,8 @@ pub fn handler(fp: &mut FileProcess) -> Result<(PathBuf, File, bool)> {
         return Err(anyhow!("{}: wrong magic ({:?})", fp.input_path.display(), buf));
     }
 
-    let (output_path, output) = fp.open_output()?;
-    let mut output = BufWriter::new(output);
+    fp.open_output()?;
+    let mut output = BufWriter::new(fp.output.as_mut().unwrap());
 
     output.write_all(&buf)?;
 
@@ -85,8 +86,8 @@ pub fn handler(fp: &mut FileProcess) -> Result<(PathBuf, File, bool)> {
             debug!("{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
                    fp.input_path.display(), name, mtime, uid, gid, mode, size);
 
-            if fp.options.source_date_epoch.is_some() && mtime > fp.options.source_date_epoch.unwrap() {
-                let source_date_epoch_str = format!("{:<12}", fp.options.source_date_epoch.unwrap());
+            if options.source_date_epoch.is_some() && mtime > options.source_date_epoch.unwrap() {
+                let source_date_epoch_str = format!("{:<12}", options.source_date_epoch.unwrap());
 
                 buf[16..28].copy_from_slice(source_date_epoch_str.as_bytes());
                 have_mod = true;
@@ -110,8 +111,8 @@ pub fn handler(fp: &mut FileProcess) -> Result<(PathBuf, File, bool)> {
     }
 
     output.flush()?;
-
-    Ok((output_path, output.into_inner()?, have_mod))
+    drop(output);
+    fp.finalize(have_mod)
 }
 
 #[cfg(test)]
