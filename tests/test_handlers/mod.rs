@@ -1,4 +1,5 @@
 mod test_ar;
+mod test_pyc;
 
 use anyhow::Result;
 use std::fs;
