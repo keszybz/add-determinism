@@ -1,4 +1,9 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+use std::fs::File;
+use std::io::Read;
 use std::os::linux::fs::MetadataExt;
+use std::path::Path;
 
 use add_determinism::options::Options;
 use add_determinism::handlers::pyc;
@@ -10,6 +15,22 @@ const OPTS: Options = Options{
     verbose: false,
     source_date_epoch: Some(111),
 };
+
+#[test]
+fn test_verify_python3_pyc_3_12() {
+    for p in [
+        "tests/cases/adapters.cpython-312.pyc",
+        "tests/cases/adapters.cpython-312.opt-1.pyc",
+        "tests/cases/adapters.cpython-312.fixed.pyc",
+    ] {
+        let p = Path::new(p);
+
+        let mut buf = [0; 4];
+        File::open(p).unwrap().read_exact(&mut buf).unwrap();
+
+        assert_eq!(pyc::verify_python3_pyc(&p, &buf).unwrap(), true);
+    }
+}
 
 #[test]
 fn test_adapters() {
