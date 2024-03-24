@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::Parser;
+use chrono::{Utc, TimeZone};
 use log::{debug, LevelFilter};
 use std::env;
 use std::path::PathBuf;
@@ -39,8 +40,15 @@ impl Options {
             };
         }
 
-        debug!("SOURCE_DATE_EPOCH timestamp: {}",
-               options.source_date_epoch.map(|v| v.to_string()).unwrap_or("(unset)".to_string()));
+        match options.source_date_epoch {
+            None => debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)"),
+            Some(v) => {
+                debug!("SOURCE_DATE_EPOCH timestamp: {} ({})",
+                       v,
+                       Utc.timestamp_opt(v, 0).unwrap());
+            },
+        }
+
         Ok(options)
     }
 }
