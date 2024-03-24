@@ -19,31 +19,31 @@ pub fn filter(path: &Path) -> Result<bool> {
 
 pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
     let mut have_mod = false;
-    let mut fp = InputOutputHelper::new(input_path)?;
+    let (mut io, mut input) = InputOutputHelper::open(input_path)?;
 
     let mut buf = [0; MAGIC.len()];
-    fp.input.read_exact(&mut buf)?;
+    input.read_exact(&mut buf)?;
     if buf != MAGIC {
-        return Err(anyhow!("{}: wrong magic ({:?})", fp.input_path.display(), buf));
+        return Err(anyhow!("{}: wrong magic ({:?})", io.input_path.display(), buf));
     }
 
-    fp.open_output()?;
-    let mut output = BufWriter::new(fp.output.as_mut().unwrap());
+    io.open_output()?;
+    let mut output = BufWriter::new(io.output.as_mut().unwrap());
 
     output.write_all(&buf)?;
 
     loop {
-        let pos = fp.input.stream_position()?;
+        let pos = input.stream_position()?;
         let mut buf = [0; FILE_HEADER_LENGTH];
 
-        debug!("{}: reading file header at offset {}", fp.input_path.display(), pos);
+        debug!("{}: reading file header at offset {}", io.input_path.display(), pos);
 
-        match fp.input.read(&mut buf)? {
+        match input.read(&mut buf)? {
             0 => break,
             FILE_HEADER_LENGTH => {},
             n => {
                 return Err(anyhow!("{}: short read of {} bytes at offset {}",
-                                   fp.input_path.display(), n, pos));
+                                   io.input_path.display(), n, pos));
             }
         }
 
@@ -59,7 +59,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
 
         if &buf[58..] != FILE_HEADER_MAGIC {
             return Err(anyhow!("{}: wrong magic in file header at offset {}: {:?} != {:?}",
-                               fp.input_path.display(), pos, &buf[58..], FILE_HEADER_MAGIC));
+                               io.input_path.display(), pos, &buf[58..], FILE_HEADER_MAGIC));
         }
 
         let name = std::str::from_utf8(&buf[0..16])?.trim_end_matches(' ');
@@ -69,7 +69,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
 
         if name == "//" {
             // System V/GNU table of long filenames
-            debug!("{}: long filename index, size={}", fp.input_path.display(), size);
+            debug!("{}: long filename index, size={}", io.input_path.display(), size);
         } else {
             let mtime = std::str::from_utf8(&buf[16..28])?.trim_end_matches(' ');
             let mtime = mtime.parse::<i64>()?;
@@ -84,7 +84,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
             let mode = mode.parse::<u64>()?;
 
             debug!("{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
-                   fp.input_path.display(), name, mtime, uid, gid, mode, size);
+                   io.input_path.display(), name, mtime, uid, gid, mode, size);
 
             if options.source_date_epoch.is_some() && mtime > options.source_date_epoch.unwrap() {
                 let source_date_epoch_str = format!("{:<12}", options.source_date_epoch.unwrap());
@@ -105,14 +105,14 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
         let padded_size = size + size % 2;
 
         let mut buf = vec![0; padded_size.try_into().unwrap()];
-        fp.input.read_exact(&mut buf)?;
+        input.read_exact(&mut buf)?;
 
         output.write_all(&buf)?;
     }
 
     output.flush()?;
     drop(output);
-    fp.finalize(have_mod)
+    io.finalize(have_mod)
 }
 
 #[cfg(test)]

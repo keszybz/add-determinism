@@ -18,7 +18,9 @@ clap = { version = "4.4.18", features = ["derive"] }
 indoc = "2.0.4"
 log = { version = "0.4", features = ["std"] }
 pyo3 = "0.20.0"
+time = "0.3.34"
 walkdir = "2.5.0"
+zip = "0.6.0"
 
 [dev-dependencies]
 tempfile = "3"

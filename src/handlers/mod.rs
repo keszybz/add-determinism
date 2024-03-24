@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 pub mod ar;
+pub mod jar;
 pub mod pyc;
 
 use anyhow::{Context, Result, anyhow};
 use log::{debug, info, warn};
 use std::fs;
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::os::linux::fs::MetadataExt;
@@ -22,8 +23,9 @@ pub struct Processor {
     process: fn(&options::Options, &Path) -> Result<bool>,
 }
 
-const PROCESSORS: [Processor; 2] = [
+const PROCESSORS: [Processor; 3] = [
     Processor { filter: ar::filter, process: ar::process },
+    Processor { filter: jar::filter, process: jar::process },
     Processor { filter: pyc::filter, process: pyc::process },
 ];
 
@@ -61,25 +63,29 @@ pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Res
 
 pub struct InputOutputHelper<'a> {
     input_path: &'a Path,
-    input: File,
+    input_metadata: Metadata,
 
     output_path: Option<PathBuf>,
     output: Option<File>,
 }
 
 impl<'a> InputOutputHelper<'a> {
-    pub fn new(input_path: &'a Path) -> Result<Self> {
+    pub fn open(input_path: &'a Path) -> Result<(Self, File)> {
 
         let input = File::open(input_path)
             .with_context(|| format!("Cannot open {:?}", input_path))?;
         // I tried using BufReader, but it returns short reads occasionally.
 
-        Ok(InputOutputHelper {
+        let input_metadata = input.metadata()?;
+
+        let io = InputOutputHelper {
             input_path,
-            input,
+            input_metadata,
             output_path: None,
             output: None,
-        })
+        };
+
+        Ok((io, input))
     }
 
     pub fn open_output(&mut self) -> Result<()> {
@@ -96,7 +102,7 @@ impl<'a> InputOutputHelper<'a> {
         let output_path = self.input_path.with_file_name(format!(".#.{}.tmp", input_file_name));
 
         let mut openopts = File::options();
-        openopts.write(true).create_new(true);
+        openopts.read(true).write(true).create_new(true);
 
         let output = match openopts.open(&output_path) {
             Ok(some) => some,
@@ -117,7 +123,7 @@ impl<'a> InputOutputHelper<'a> {
     }
 
     pub fn finalize(&mut self, have_mod: bool) -> Result<bool> {
-        let input_metadata = self.input.metadata()?;
+        let meta = &self.input_metadata;
 
         if have_mod {
             let output_path = self.output_path.as_ref().unwrap();
@@ -139,10 +145,10 @@ impl<'a> InputOutputHelper<'a> {
             }
             let output = output.unwrap();
 
-            output.set_permissions(input_metadata.permissions())?;
-            output.set_modified(input_metadata.modified()?)?;
+            output.set_permissions(meta.permissions())?;
+            output.set_modified(meta.modified()?)?;
 
-            match unix_fs::lchown(output_path, Some(input_metadata.st_uid()), Some(input_metadata.st_gid())) {
+            match unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
                 Ok(()) => {},
                 Err(e) => {
                     if e.kind() == ErrorKind::PermissionDenied {

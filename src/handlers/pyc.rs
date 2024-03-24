@@ -301,12 +301,12 @@ pub fn verify_python3_pyc(input_path: &Path, buf: &[u8; 4]) -> Result<bool> {
 }
 
 pub fn process(_options: &options::Options, input_path: &Path) -> Result<bool> {
-    let mut fp = InputOutputHelper::new(input_path)?;
+    let (mut io, mut input) = InputOutputHelper::open(input_path)?;
 
     let mut buf = [0; 4];
-    fp.input.read_exact(&mut buf)?;
+    input.read_exact(&mut buf)?;
 
-    if !verify_python3_pyc(fp.input_path, &buf)? {
+    if !verify_python3_pyc(io.input_path, &buf)? {
         return Ok(false);
     }
 
@@ -328,16 +328,16 @@ pub fn process(_options: &options::Options, input_path: &Path) -> Result<bool> {
         .getattr("fix")?
         .into();
 
-        debug!("{}: Calling python fix()", fp.input_path.display());
-        let path = fp.input_path.to_str().unwrap();
+        debug!("{}: Calling python fix()", io.input_path.display());
+        let path = io.input_path.to_str().unwrap();
         fun.call1(py, (path,))
     })?;
 
     // MarshalParser creates a file "input.fixed.pyc" if changes were made.
     // If it exists, assume modifications have been made.
-    fp.output_path = Some(fp.input_path.with_extension("fixed.pyc"));
+    io.output_path = Some(io.input_path.with_extension("fixed.pyc"));
 
-    fp.finalize(true)
+    io.finalize(true)
 }
 
 #[cfg(test)]
