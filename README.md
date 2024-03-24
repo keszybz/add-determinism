@@ -18,7 +18,16 @@ but no modifications are made and the program returns success.
 
 Accepts `*.a`.
 
-Resets the embedded modification time to $SOURCE_DATE_EPOCH and owner:group to 0:0.
+Resets the embedded modification times to `$SOURCE_DATE_EPOCH` and owner:group to 0:0.
+
+### `jar`
+
+Accepts `*.jar`.
+
+This rewrites the zip file using the `zip` create.
+The modification times of archive entries is clamped `$SOURCE_DATE_EPOCH`.
+Extra metadata, i.e. primarily timestamps in UNIX format and DOS permissions,
+are stripped (also because the crate does not support them).
 
 ### `pyc`
 
