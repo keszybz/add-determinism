@@ -22,7 +22,7 @@ pub struct Options {
 
     /// Store source date epoch here convenience
     #[arg(long, hide=true)]
-    pub source_date_epoch: Option<u64>,
+    pub source_date_epoch: Option<i64>,
 }
 
 impl Options {
@@ -34,7 +34,7 @@ impl Options {
 
         if options.source_date_epoch.is_none() {
             options.source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
-                Ok(val) => Some(val.parse::<u64>()?),
+                Ok(val) => Some(val.parse::<i64>()?),
                 Err(_) => None,
             };
         }

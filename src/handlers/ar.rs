@@ -72,7 +72,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
             debug!("{}: long filename index, size={}", fp.input_path.display(), size);
         } else {
             let mtime = std::str::from_utf8(&buf[16..28])?.trim_end_matches(' ');
-            let mtime = mtime.parse::<u64>()?;
+            let mtime = mtime.parse::<i64>()?;
 
             let uid = std::str::from_utf8(&buf[28..34])?.trim_end_matches(' ');
             let uid = uid.parse::<u64>()?;
