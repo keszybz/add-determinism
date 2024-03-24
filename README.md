@@ -17,7 +17,15 @@ but no modifications are made and the program returns success.
 ### `ar`
 
 Accepts `*.a`.
+
 Resets the embedded modification time to $SOURCE_DATE_EPOCH and owner:group to 0:0.
+
+### `pyc`
+
+Accepts `*.pyc`.
+
+Uses the [MarshalParser Python module](https://github.com/fedora-python/marshalparser)
+to clean up the internal Python object serialization in cache files.
 
 ## Notes
 
