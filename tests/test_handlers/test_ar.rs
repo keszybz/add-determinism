@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
 use std::os::linux::fs::MetadataExt;
 
 use add_determinism::options::Options;
