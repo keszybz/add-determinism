@@ -3,12 +3,12 @@
 use std::fs;
 use std::os::linux::fs::MetadataExt;
 
-use add_determinism::options::Options;
+use add_determinism::options::Config;
 use add_determinism::handlers::javadoc;
 
 use super::prepare_dir;
 
-const OPTS: Options = Options::empty(1704106800);
+const OPTS: Config = Config::empty(1704106800);
 
 #[test]
 fn test_javadoc_example() {

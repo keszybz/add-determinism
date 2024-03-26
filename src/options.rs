@@ -12,7 +12,7 @@ use crate::simplelog;
 #[derive(Debug)]
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
-pub struct Options {
+struct Options {
     /// Paths to operate on
     #[arg(required=true)]
     pub args: Vec<PathBuf>,
@@ -20,27 +20,28 @@ pub struct Options {
     /// Turn on debugging output
     #[arg(short, long)]
     pub verbose: bool,
+}
 
-    /// Store source date epoch here convenience
-    #[arg(long, hide=true)]
+#[derive(Debug)]
+pub struct Config {
+    pub args: Vec<PathBuf>,
+    pub verbose: bool,
     pub source_date_epoch: Option<i64>,
 }
 
-impl Options {
+impl Config {
     pub fn make() -> Result<Self> {
-        let mut options = Options::parse();
+        let options = Options::parse();
 
         let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
         simplelog::init_with_level(log_level)?;
 
-        if options.source_date_epoch.is_none() {
-            options.source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
-                Ok(val) => Some(val.parse::<i64>()?),
-                Err(_) => None,
-            };
-        }
+        let source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
+            Ok(val) => Some(val.parse::<i64>()?),
+            Err(_) => None,
+        };
 
-        match options.source_date_epoch {
+        match source_date_epoch {
             None => debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)"),
             Some(v) => {
                 debug!("SOURCE_DATE_EPOCH timestamp: {} ({})",
@@ -49,7 +50,11 @@ impl Options {
             },
         }
 
-        Ok(options)
+        Ok(Self {
+            args: options.args,
+            verbose: options.verbose,
+            source_date_epoch,
+        })
     }
 
     #[allow(dead_code)]

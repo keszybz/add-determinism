@@ -300,7 +300,7 @@ pub fn verify_python3_pyc(input_path: &Path, buf: &[u8; 4]) -> Result<bool> {
     }
 }
 
-pub fn process(_options: &options::Options, input_path: &Path) -> Result<bool> {
+pub fn process(_config: &options::Config, input_path: &Path) -> Result<bool> {
     let (mut io, mut input) = InputOutputHelper::open(input_path)?;
 
     let mut buf = [0; 4];

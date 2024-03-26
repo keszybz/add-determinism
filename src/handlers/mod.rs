@@ -21,7 +21,7 @@ pub struct Processor {
     filter: fn(&Path) -> Result<bool>,
 
     /// Process file and return true if modifications were made.
-    process: fn(&options::Options, &Path) -> Result<bool>,
+    process: fn(&options::Config, &Path) -> Result<bool>,
 }
 
 macro_rules! Proc {
@@ -37,7 +37,7 @@ const PROCESSORS: [Processor; 4] = [
     Proc!(pyc),
 ];
 
-pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Result<u64> {
+pub fn process_file_or_dir(config: &options::Config, input_path: &Path) -> Result<u64> {
     debug!("Looking at path {:?}…", input_path);
 
     let mut modifications = 0;
@@ -54,7 +54,7 @@ pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Res
 
             for processor in PROCESSORS {
                 if (processor.filter)(entry.path())? {
-                    match (processor.process)(options, entry.path()) {
+                    match (processor.process)(config, entry.path()) {
                         Err(err) => {
                             warn!("Failed to process file: {}", err);
                         },

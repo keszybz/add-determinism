@@ -8,10 +8,10 @@ use anyhow::Result;
 use log::warn;
 
 fn main() -> Result<()> {
-    let options = options::Options::make()?;
+    let config = options::Config::make()?;
 
-    for input_path in &options.args {
-        handlers::process_file_or_dir(&options, input_path).unwrap_or_else(|err| {
+    for input_path in &config.args {
+        handlers::process_file_or_dir(&config, input_path).unwrap_or_else(|err| {
             warn!("Failed to process file: {}", err);
             0
         });

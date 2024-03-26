@@ -17,7 +17,7 @@ pub fn filter(path: &Path) -> Result<bool> {
     Ok(path.extension().is_some_and(|x| x == "a"))
 }
 
-pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
+pub fn process(config: &options::Config, input_path: &Path) -> Result<bool> {
     let mut have_mod = false;
     let (mut io, mut input) = InputOutputHelper::open(input_path)?;
 
@@ -86,8 +86,8 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
             debug!("{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
                    io.input_path.display(), name, mtime, uid, gid, mode, size);
 
-            if options.source_date_epoch.is_some() && mtime > options.source_date_epoch.unwrap() {
-                let source_date_epoch_str = format!("{:<12}", options.source_date_epoch.unwrap());
+            if config.source_date_epoch.is_some() && mtime > config.source_date_epoch.unwrap() {
+                let source_date_epoch_str = format!("{:<12}", config.source_date_epoch.unwrap());
 
                 buf[16..28].copy_from_slice(source_date_epoch_str.as_bytes());
                 have_mod = true;

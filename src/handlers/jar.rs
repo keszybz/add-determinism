@@ -16,7 +16,7 @@ pub fn filter(path: &Path) -> Result<bool> {
     Ok(path.extension().is_some_and(|x| x == "jar"))
 }
 
-pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
+pub fn process(config: &options::Config, input_path: &Path) -> Result<bool> {
     let mut have_mod = false;
     let (mut io, input) = InputOutputHelper::open(input_path)?;
     let mut input = zip::ZipArchive::new(BufReader::new(input))?;
@@ -26,7 +26,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
     let output = BufWriter::new(io.output.as_ref().unwrap());
     let mut output = zip::ZipWriter::new(output);
 
-    let epoch = options.source_date_epoch
+    let epoch = config.source_date_epoch
         .map(|v| time::OffsetDateTime::from_unix_timestamp(v).unwrap());
 
     for i in 0..input.len() {

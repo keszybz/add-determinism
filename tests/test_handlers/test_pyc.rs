@@ -5,12 +5,12 @@ use std::io::Read;
 use std::os::linux::fs::MetadataExt;
 use std::path::Path;
 
-use add_determinism::options::Options;
+use add_determinism::options::Config;
 use add_determinism::handlers::pyc;
 
 use super::prepare_dir;
 
-const OPTS: Options = Options::empty(111);
+const OPTS: Config = Config::empty(111);
 
 #[test]
 fn test_verify_python3_pyc_3_12() {
