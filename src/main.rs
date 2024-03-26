@@ -8,7 +8,10 @@ use anyhow::Result;
 use log::warn;
 
 fn main() -> Result<()> {
-    let config = options::Config::make()?;
+    let config = match options::Config::make()? {
+        None => { return Ok(()); },
+        Some(some) => some
+    };
 
     for input_path in &config.args {
         handlers::process_file_or_dir(&config, input_path).unwrap_or_else(|err| {

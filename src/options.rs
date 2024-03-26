@@ -1,21 +1,26 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use chrono::{Utc, TimeZone};
-use log::{debug, LevelFilter};
+use log::{debug, warn, LevelFilter};
 use std::env;
 use std::path::PathBuf;
 
 use crate::simplelog;
+use crate::handlers;
 
 #[derive(Debug)]
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Options {
     /// Paths to operate on
-    #[arg(required=true)]
     pub args: Vec<PathBuf>,
+
+    /// Handlers to enable;
+    /// use --handler=list to list
+    #[arg(long = "handler")]
+    pub handlers: Vec<String>,
 
     /// Turn on debugging output
     #[arg(short, long)]
@@ -23,14 +28,15 @@ struct Options {
 }
 
 #[derive(Debug)]
-pub struct Config {
+pub struct Config<'a> {
     pub args: Vec<PathBuf>,
     pub verbose: bool,
     pub source_date_epoch: Option<i64>,
+    pub handlers: Vec<&'a handlers::Processor>,
 }
 
-impl Config {
-    pub fn make() -> Result<Self> {
+impl Config<'_> {
+    pub fn make() -> Result<Option<Self>> {
         let options = Options::parse();
 
         let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
@@ -50,11 +56,44 @@ impl Config {
             },
         }
 
-        Ok(Self {
+        let handlers: Vec<&str> = options.handlers.iter().map(|s| s.split(",")).flatten().collect();
+
+        if handlers.contains(&"list") {
+            println!("{}", handlers::handler_names().join("\n"));
+            return Ok(None);
+        }
+
+        if handlers.iter().any(|x| x.starts_with('-')) &&
+            handlers.iter().any(|x| !x.starts_with('-')) {
+            return Err(anyhow!("Cannot mix --handler options with '-' and without"));
+        }
+
+        let known = handlers::handler_names();
+        for name in handlers
+            .iter()
+            .map(|x| if x.starts_with('-') { &x[1..] } else { x })
+            .filter(|x| !known.contains(x))
+        {
+            warn!("Unknown handler name: {:?}", name);
+        }
+
+        if options.args.is_empty() {
+            return Err(anyhow!("Paths to operate on must be specified as positional arguments"));
+        }
+
+        let handlers = handlers::active_handlers(&handlers);
+        if handlers.is_empty() {
+            return Err(anyhow!("Handler list is empty, nothing to do"));
+        }
+        let handler_names: Vec<&str> = handlers.iter().map(|p| p.name).collect();
+        debug!("Running with handlers: {}", handler_names.join(", "));
+
+        Ok(Some(Self {
             args: options.args,
             verbose: options.verbose,
             source_date_epoch,
-        })
+            handlers,
+        }))
     }
 
     #[allow(dead_code)]
@@ -64,6 +103,7 @@ impl Config {
             args: vec![],
             verbose: false,
             source_date_epoch: Some(source_date_epoch),
+            handlers: vec![],
         }
     }
 }

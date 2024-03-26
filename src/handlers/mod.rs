@@ -16,7 +16,11 @@ use std::os::unix::fs as unix_fs;
 
 use crate::options;
 
+#[derive(Debug)]
+#[derive(PartialEq)]
 pub struct Processor {
+    pub name: &'static str,
+
     /// Return true if the given path looks like it should be processed.
     filter: fn(&Path) -> Result<bool>,
 
@@ -26,16 +30,47 @@ pub struct Processor {
 
 macro_rules! Proc {
     ( $name:ident ) => {
-        Processor { filter: $name::filter, process: $name::process }
+        Processor { name: stringify!($name), filter: $name::filter, process: $name::process }
     }
 }
 
-const PROCESSORS: [Processor; 4] = [
+pub const PROCESSORS: [Processor; 4] = [
     Proc!(ar),
     Proc!(jar),
     Proc!(javadoc),
     Proc!(pyc),
 ];
+
+pub fn handler_names() -> Vec<&'static str> {
+    PROCESSORS.iter().map(|p| p.name).collect()
+}
+
+fn filter_by_name(name: &str, filter: &Vec<&str>) -> bool {
+    let mut negative_filter = true;
+
+    for f in filter.iter().rev() {
+        if f.starts_with('-') {
+            if *name == f[1..] {
+                return false;
+            }
+        } else {
+            negative_filter = false;
+
+            if name == *f {
+                return true;
+            }
+        }
+    }
+
+    return negative_filter;
+}
+
+pub fn active_handlers(filter: &Vec<&str>) -> Vec<&'static Processor> {
+    PROCESSORS
+        .iter()
+        .filter(|p| filter_by_name(p.name, filter))
+        .collect()
+}
 
 pub fn process_file_or_dir(config: &options::Config, input_path: &Path) -> Result<u64> {
     debug!("Looking at path {:?}…", input_path);
@@ -52,7 +87,7 @@ pub fn process_file_or_dir(config: &options::Config, input_path: &Path) -> Resul
                 continue;
             }
 
-            for processor in PROCESSORS {
+            for processor in &config.handlers {
                 if (processor.filter)(entry.path())? {
                     match (processor.process)(config, entry.path()) {
                         Err(err) => {
@@ -176,5 +211,19 @@ impl<'a> InputOutputHelper<'a> {
         }
 
         Ok(have_mod)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_by_name() {
+        assert_eq!(filter_by_name("x", &vec!["x", "y"]), true);
+        assert_eq!(filter_by_name("x", &vec!["x"]), true);
+        assert_eq!(filter_by_name("x", &vec![]), true);
+        assert_eq!(filter_by_name("x", &vec!["-x"]), false);
+        assert_eq!(filter_by_name("x", &vec!["-y"]), true);
     }
 }
