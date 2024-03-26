@@ -24,10 +24,10 @@ pub struct Processor {
     pub name: &'static str,
 
     /// Return true if the given path looks like it should be processed.
-    filter: fn(&Path) -> Result<bool>,
+    pub filter: fn(&Path) -> Result<bool>,
 
     /// Process file and return true if modifications were made.
-    process: fn(&options::Config, &Path) -> Result<bool>,
+    pub process: fn(&options::Config, &Path) -> Result<bool>,
 }
 
 macro_rules! Proc {
