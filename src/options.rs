@@ -39,22 +39,12 @@ impl Config<'_> {
     pub fn make() -> Result<Option<Self>> {
         let options = Options::parse();
 
+        // log level
+
         let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
         simplelog::init_with_level(log_level)?;
 
-        let source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
-            Ok(val) => Some(val.parse::<i64>()?),
-            Err(_) => None,
-        };
-
-        match source_date_epoch {
-            None => debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)"),
-            Some(v) => {
-                debug!("SOURCE_DATE_EPOCH timestamp: {} ({})",
-                       v,
-                       Utc.timestamp_opt(v, 0).unwrap());
-            },
-        }
+        // handlers
 
         let handlers: Vec<&str> = options.handlers.iter().map(|s| s.split(",")).flatten().collect();
 
@@ -77,16 +67,36 @@ impl Config<'_> {
             warn!("Unknown handler name: {:?}", name);
         }
 
-        if options.args.is_empty() {
-            return Err(anyhow!("Paths to operate on must be specified as positional arguments"));
-        }
-
         let handlers = handlers::active_handlers(&handlers);
         if handlers.is_empty() {
             return Err(anyhow!("Handler list is empty, nothing to do"));
         }
         let handler_names: Vec<&str> = handlers.iter().map(|p| p.name).collect();
         debug!("Running with handlers: {}", handler_names.join(", "));
+
+        // positional args
+
+        if options.args.is_empty() {
+            return Err(anyhow!("Paths to operate on must be specified as positional arguments"));
+        }
+
+        // $SOURCE_DATE_EPOCH
+
+        let source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
+            Ok(val) => Some(val.parse::<i64>()?),
+            Err(_) => None,
+        };
+
+        match source_date_epoch {
+            None => debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)"),
+            Some(v) => {
+                debug!("SOURCE_DATE_EPOCH timestamp: {} ({})",
+                       v,
+                       Utc.timestamp_opt(v, 0).unwrap());
+            },
+        }
+
+        // finito
 
         Ok(Some(Self {
             args: options.args,
