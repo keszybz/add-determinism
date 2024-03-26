@@ -27,7 +27,7 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn make() -> Result<Options> {
+    pub fn make() -> Result<Self> {
         let mut options = Options::parse();
 
         let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
@@ -50,5 +50,15 @@ impl Options {
         }
 
         Ok(options)
+    }
+
+    #[allow(dead_code)]
+    // FIXME: should this be marked as #[cfg(test)]? But then the tests don't compile.
+    pub const fn empty(source_date_epoch: i64) -> Self {
+        Self {
+            args: vec![],
+            verbose: false,
+            source_date_epoch: Some(source_date_epoch),
+        }
     }
 }

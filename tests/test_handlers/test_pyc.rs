@@ -10,11 +10,7 @@ use add_determinism::handlers::pyc;
 
 use super::prepare_dir;
 
-const OPTS: Options = Options{
-    args: vec![],
-    verbose: false,
-    source_date_epoch: Some(111),
-};
+const OPTS: Options = Options::empty(111);
 
 #[test]
 fn test_verify_python3_pyc_3_12() {

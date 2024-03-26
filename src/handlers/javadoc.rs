@@ -117,11 +117,7 @@ pub fn process(options: &options::Options, input_path: &Path) -> Result<bool> {
 mod tests {
     use super::*;
 
-    const OPTS: options::Options = options::Options {
-        args: vec![],
-        verbose: false,
-        source_date_epoch: Some(1704106800),
-    };
+    const OPTS: options::Options = options::Options::empty(1704106800);
 
     #[test]
     fn test_filter_html() {

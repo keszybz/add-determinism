@@ -8,11 +8,7 @@ use add_determinism::handlers::javadoc;
 
 use super::prepare_dir;
 
-const OPTS: Options = Options{
-    args: vec![],
-    verbose: false,
-    source_date_epoch: Some(1704106800),
-};
+const OPTS: Options = Options::empty(1704106800);
 
 #[test]
 fn test_javadoc_example() {

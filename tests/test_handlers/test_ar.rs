@@ -7,11 +7,7 @@ use add_determinism::handlers::ar;
 
 use super::prepare_dir;
 
-const OPTS: Options = Options{
-    args: vec![],
-    verbose: false,
-    source_date_epoch: Some(111),
-};
+const OPTS: Options = Options::empty(111);
 
 #[test]
 fn test_libempty() {
