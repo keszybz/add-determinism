@@ -24,11 +24,17 @@ pub struct Processor {
     process: fn(&options::Options, &Path) -> Result<bool>,
 }
 
+macro_rules! Proc {
+    ( $name:ident ) => {
+        Processor { filter: $name::filter, process: $name::process }
+    }
+}
+
 const PROCESSORS: [Processor; 4] = [
-    Processor { filter: ar::filter,      process: ar::process      },
-    Processor { filter: jar::filter,     process: jar::process     },
-    Processor { filter: javadoc::filter, process: javadoc::process },
-    Processor { filter: pyc::filter,     process: pyc::process     },
+    Proc!(ar),
+    Proc!(jar),
+    Proc!(javadoc),
+    Proc!(pyc),
 ];
 
 pub fn process_file_or_dir(options: &options::Options, input_path: &Path) -> Result<u64> {
