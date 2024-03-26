@@ -46,7 +46,7 @@ impl Config<'_> {
 
         // handlers
 
-        let handlers: Vec<&str> = options.handlers.iter().map(|s| s.split(",")).flatten().collect();
+        let handlers: Vec<&str> = options.handlers.iter().flat_map(|s| s.split(',')).collect();
 
         if handlers.contains(&"list") {
             println!("{}", handlers::handler_names().join("\n"));
@@ -61,7 +61,7 @@ impl Config<'_> {
         let known = handlers::handler_names();
         for name in handlers
             .iter()
-            .map(|x| if x.starts_with('-') { &x[1..] } else { x })
+            .map(|x| x.strip_prefix('-').unwrap_or(x))
             .filter(|x| !known.contains(x))
         {
             warn!("Unknown handler name: {:?}", name);

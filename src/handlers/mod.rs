@@ -45,12 +45,12 @@ pub fn handler_names() -> Vec<&'static str> {
     PROCESSORS.iter().map(|p| p.name).collect()
 }
 
-fn filter_by_name(name: &str, filter: &Vec<&str>) -> bool {
+fn filter_by_name(name: &str, filter: &[&str]) -> bool {
     let mut negative_filter = true;
 
     for f in filter.iter().rev() {
-        if f.starts_with('-') {
-            if *name == f[1..] {
+        if let Some(f) = f.strip_prefix('-') {
+            if name == f {
                 return false;
             }
         } else {
@@ -62,10 +62,10 @@ fn filter_by_name(name: &str, filter: &Vec<&str>) -> bool {
         }
     }
 
-    return negative_filter;
+    negative_filter
 }
 
-pub fn active_handlers(filter: &Vec<&str>) -> Vec<&'static Processor> {
+pub fn active_handlers(filter: &[&str]) -> Vec<&'static Processor> {
     PROCESSORS
         .iter()
         .filter(|p| filter_by_name(p.name, filter))
