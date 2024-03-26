@@ -7,11 +7,13 @@ pub mod pyc;
 
 use anyhow::{Context, Result, anyhow};
 use log::{debug, info, warn};
+use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, Metadata};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::os::linux::fs::MetadataExt;
+use std::os::linux::fs::MetadataExt as _;
+use std::os::unix::fs::MetadataExt as _;
 use std::os::unix::fs as unix_fs;
 
 use crate::options;
@@ -72,8 +74,15 @@ pub fn active_handlers(filter: &[&str]) -> Vec<&'static Processor> {
         .collect()
 }
 
-pub fn process_file_or_dir(config: &options::Config, input_path: &Path) -> Result<u64> {
-    debug!("Looking at path {:?}…", input_path);
+pub fn inodes_seen() -> HashMap<u64, u8> {
+    HashMap::new()
+}
+
+pub fn process_file_or_dir(
+    config: &options::Config,
+    inodes_seen: &mut HashMap<u64, u8>,
+    input_path: &Path,
+) -> Result<u64> {
 
     let mut modifications = 0;
 
@@ -82,16 +91,36 @@ pub fn process_file_or_dir(config: &options::Config, input_path: &Path) -> Resul
         .into_iter()
         .filter_map(|e| e.ok()) {
 
+            debug!("Looking at {}…", entry.path().display());
+
             let metadata = entry.metadata()?;
             if !metadata.is_file() {
+                debug!("{}: not a file", entry.path().display());
                 continue;
             }
 
-            for processor in &config.handlers {
-                if (processor.filter)(entry.path())? {
+            let ino = metadata.ino();
+            let mut already_seen = *inodes_seen.get(&ino).unwrap_or(&0);
+
+            for (n_processor, processor) in config.handlers.iter().enumerate() {
+                // The same inode can be linked under multiple names
+                // with different extensions. Thus, we check if the
+                // given processor already handled this file.
+                if already_seen & (1 << n_processor) > 0 {
+                    debug!("{}: already seen by {} handler",
+                           entry.path().display(), processor.name);
+                    continue;
+                }
+
+                let cond = (processor.filter)(entry.path())?;
+                debug!("{}: handler {}: {}", entry.path().display(), processor.name, cond);
+
+                if cond {
+                    already_seen |= 1 << n_processor;
+
                     match (processor.process)(config, entry.path()) {
                         Err(err) => {
-                            warn!("Failed to process file: {}", err);
+                            warn!("{}: failed to process: {}", entry.path().display(), err);
                         },
                         Ok(modified) => {
                             modifications += modified as u64;
@@ -99,6 +128,8 @@ pub fn process_file_or_dir(config: &options::Config, input_path: &Path) -> Resul
                     }
                 }
             }
+
+            inodes_seen.insert(ino, already_seen);
         }
 
     Ok(modifications)

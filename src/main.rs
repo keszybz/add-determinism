@@ -13,9 +13,11 @@ fn main() -> Result<()> {
         Some(some) => some
     };
 
+    let mut inodes_seen = handlers::inodes_seen();
+
     for input_path in &config.args {
-        handlers::process_file_or_dir(&config, input_path).unwrap_or_else(|err| {
-            warn!("Failed to process file: {}", err);
+        handlers::process_file_or_dir(&config, &mut inodes_seen, input_path).unwrap_or_else(|err| {
+            warn!("{}: failed to process: {}", input_path.display(), err);
             0
         });
     }
