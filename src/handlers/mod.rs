@@ -222,15 +222,12 @@ impl<'a> InputOutputHelper<'a> {
             output.set_permissions(meta.permissions())?;
             output.set_modified(meta.modified()?)?;
 
-            match unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
-                Ok(()) => {},
-                Err(e) => {
-                    if e.kind() == ErrorKind::PermissionDenied {
-                        warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
-                    } else {
-                        return Err(anyhow!("{}: cannot change file ownership: {}", self.input_path.display(), e));
-                    }
-                },
+            if let Err(e) = unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
+                if e.kind() == ErrorKind::PermissionDenied {
+                    warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
+                } else {
+                    return Err(anyhow!("{}: cannot change file ownership: {}", self.input_path.display(), e));
+                }
             }
 
             info!("{}: replacing with normalized version", self.input_path.display());
