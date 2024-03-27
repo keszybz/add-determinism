@@ -100,8 +100,9 @@ pub fn process_file_or_dir(
                 continue;
             }
 
-            let ino = metadata.ino();
-            let mut already_seen = *inodes_seen.get(&ino).unwrap_or(&0);
+            let inode = metadata.ino();
+            let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
+            let mut entry_mod = false;
 
             for (n_processor, processor) in config.handlers.iter().enumerate() {
                 // The same inode can be linked under multiple names
@@ -123,14 +124,28 @@ pub fn process_file_or_dir(
                         Err(err) => {
                             warn!("{}: failed to process: {}", entry.path().display(), err);
                         },
-                        Ok(modified) => {
-                            modifications += modified as u64;
+                        Ok(false) => {},
+                        Ok(true) => {
+                            entry_mod = true;
                         },
                     }
                 }
             }
 
-            inodes_seen.insert(ino, already_seen);
+            inodes_seen.insert(inode, already_seen); // This is the orig inode
+            if entry_mod {
+                modifications += 1;
+
+                // The path might have been replaced with a new inode.
+                let metadata = entry.metadata()?;
+                let inode2 = metadata.ino();
+                if inode2 != inode {
+                    // This is the new inode. We use the same set of bits in
+                    // already_seen, because those handlers have already been
+                    // applied to the contents of the new inode.
+                    inodes_seen.insert(inode2, already_seen);
+                }
+            }
         }
 
     Ok(modifications)
