@@ -10,7 +10,8 @@ use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, Metadata};
-use std::io::ErrorKind;
+use std::io;
+use std::io::Seek;
 use std::path::{Path, PathBuf};
 use std::os::linux::fs::MetadataExt as _;
 use std::os::unix::fs::MetadataExt as _;
@@ -181,7 +182,7 @@ impl<'a> InputOutputHelper<'a> {
         let output = match openopts.open(&output_path) {
             Ok(some) => some,
             Err(e) => {
-                if e.kind() != ErrorKind::AlreadyExists {
+                if e.kind() != io::ErrorKind::AlreadyExists {
                     return Err(anyhow!("{}: cannot open temporary file: {}", output_path.display(), e));
                 }
 
@@ -202,36 +203,50 @@ impl<'a> InputOutputHelper<'a> {
         if have_mod {
             let output_path = self.output_path.as_ref().unwrap();
 
-            let mut output = self.output.as_ref();
-            let fallback_output;
+            let mut output = self.output.as_mut();
+            let mut fallback_output;
             if output.is_none() {
                 fallback_output = match File::open(output_path) {
                     Ok(some) => Some(some),
                     Err(e) => {
-                        if e.kind() == ErrorKind::NotFound {
+                        if e.kind() == io::ErrorKind::NotFound {
                             return Ok(false); // no modifications and nothing to do
                         } else {
                             return Err(anyhow!("{}: cannot reopen temporary file: {}", output_path.display(), e));
                         }
                     },
                 };
-                output = fallback_output.as_ref();
+                output = fallback_output.as_mut();
             }
             let output = output.unwrap();
 
-            output.set_permissions(meta.permissions())?;
-            output.set_modified(meta.modified()?)?;
+            // If the original file has nlinks == 1, we atomically replace it.
+            // If it has multiple links, we reopen the orignal file and rewrite it.
+            // This way the inode number is retained and hard links are not broken.
+            if meta.nlink() == 1 {
+                output.set_permissions(meta.permissions())?;
+                output.set_modified(meta.modified()?)?;
 
-            if let Err(e) = unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
-                if e.kind() == ErrorKind::PermissionDenied {
-                    warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
-                } else {
-                    return Err(anyhow!("{}: cannot change file ownership: {}", self.input_path.display(), e));
+                if let Err(e) = unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
+                    if e.kind() == io::ErrorKind::PermissionDenied {
+                        warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
+                    } else {
+                        return Err(anyhow!("{}: cannot change file ownership: {}", self.input_path.display(), e));
+                    }
                 }
-            }
 
-            info!("{}: replacing with normalized version", self.input_path.display());
-            fs::rename(output_path, self.input_path)?;
+                info!("{}: replacing with normalized version", self.input_path.display());
+                fs::rename(output_path, self.input_path)?;
+            } else {
+                output.seek(io::SeekFrom::Start(0))?;
+
+                let mut input_writer = File::options().write(true).open(self.input_path)?;
+
+                info!("{}: rewriting with normalized contents", self.input_path.display());
+                io::copy(output, &mut input_writer)?;
+
+                input_writer.set_modified(meta.modified()?)?;
+            }
 
         } else if let Some(output_path) = &self.output_path {
             debug!("{}: discarding modified version", self.input_path.display());

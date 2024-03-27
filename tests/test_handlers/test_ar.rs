@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+use std::fs;
 use std::os::linux::fs::MetadataExt;
 
 use add_determinism::options::Config;
@@ -40,6 +41,24 @@ fn test_testrelro() {
     assert!(orig.created().unwrap() <= new.created().unwrap());
     assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_ne!(orig.st_ino(), new.st_ino());
+}
+
+#[test]
+fn test_testrelro_hardlinked() {
+    let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
+
+    assert!(ar::filter(&*input).unwrap());
+
+    let orig = input.metadata().unwrap();
+
+    fs::hard_link(&*input, (*input).with_extension("b")).unwrap();
+
+    assert_eq!(ar::process(&OPTS, &*input).unwrap(), true);
+
+    let new = input.metadata().unwrap();
+    assert_eq!(orig.created().unwrap(), new.created().unwrap());
+    assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
+    assert_eq!(orig.st_ino(), new.st_ino());
 }
 
 #[test]
