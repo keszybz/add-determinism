@@ -1,0 +1,17 @@
+### BRP scripts (and related macros) provided by the add-determinism package
+
+# The path to the program.
+# If unset, the program will not be called.
+%__brp_add_determinism /usr/bin/add-determinism
+
+# Extra options to be passed to the program.
+# For example, --handler=-pyc can be used to disable the pyc file handler.
+%add_determinism_options %{nil}
+
+# Directories (or files) to process.
+# Could be used to limit to a subset of buildroot.
+%add_determinism_paths %{buildroot}
+
+%__os_install_post_build_reproducibility \
+    %{?__brp_add_determinism:%{__brp_add_determinism} --brp %{add_determinism_options} %{add_determinism_paths}} \
+%{nil}
