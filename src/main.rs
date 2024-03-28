@@ -28,8 +28,21 @@ fn brp_check(config: &options::Config) -> Result<()> {
         let build_root = env::var("RPM_BUILD_ROOT")
             .map_err(|_| anyhow!("RPM_BUILD_ROOT variable is not defined"))?;
 
-        if build_root.is_empty() || build_root == "/" {
+        if build_root.is_empty() {
+            return Err(anyhow!("Empty RPM_BUILD_ROOT is not allowed"));
+        }
+
+        let build_root_path = Path::new(&build_root).canonicalize()
+            .map_err(|e| anyhow!("Cannot canonicalize RPM_BUILD_ROOT={:?}: {}", build_root, e))?;
+
+        if build_root_path == Path::new("/") {
             return Err(anyhow!("RPM_BUILD_ROOT={:?} is not allowed", build_root));
+        }
+
+        for arg in &config.args {
+            if !arg.starts_with(&build_root_path) {
+                return Err(anyhow!("Path {:?} is outside of $RPM_BUILD_ROOT", arg));
+            }
         }
     }
 
