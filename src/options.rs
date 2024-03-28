@@ -22,6 +22,10 @@ struct Options {
     #[arg(long = "handler")]
     pub handlers: Vec<String>,
 
+    /// Adjust behaviour as appropriate for a build root program
+    #[arg(long)]
+    pub brp: bool,
+
     /// Turn on debugging output
     #[arg(short, long)]
     pub verbose: bool,
@@ -30,6 +34,7 @@ struct Options {
 #[derive(Debug)]
 pub struct Config<'a> {
     pub args: Vec<PathBuf>,
+    pub brp: bool,
     pub verbose: bool,
     pub source_date_epoch: Option<i64>,
     pub handlers: Vec<&'a handlers::Processor>,
@@ -100,6 +105,7 @@ impl Config<'_> {
 
         Ok(Some(Self {
             args: options.args,
+            brp: options.brp,
             verbose: options.verbose,
             source_date_epoch,
             handlers,
@@ -111,6 +117,7 @@ impl Config<'_> {
     pub const fn empty(source_date_epoch: i64) -> Self {
         Self {
             args: vec![],
+            brp: false,
             verbose: false,
             source_date_epoch: Some(source_date_epoch),
             handlers: vec![],

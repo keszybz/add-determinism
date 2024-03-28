@@ -9,13 +9,13 @@ use log::{debug, warn};
 use std::env;
 use std::path::Path;
 
-fn brp_check() -> Result<()> {
+fn brp_check(config: &options::Config) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
     // the target binary, so we cannot use that.
 
     let arg0 = env::args().next().unwrap();
 
-    let brp = Path::new(&arg0)
+    let brp = config.brp || Path::new(&arg0)
         .file_name()
         .ok_or(anyhow!("Exe path doesn't have a file name?"))?
         .to_str()
@@ -42,7 +42,7 @@ fn main() -> Result<()> {
         Some(some) => some
     };
 
-    brp_check()?;
+    brp_check(&config)?;
 
     let mut inodes_seen = handlers::inodes_seen();
 
