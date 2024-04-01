@@ -16,63 +16,64 @@ use std::path::{Path, PathBuf};
 use std::os::linux::fs::MetadataExt as _;
 use std::os::unix::fs::MetadataExt as _;
 use std::os::unix::fs as unix_fs;
+use std::rc::Rc;
 
 use crate::options;
 
-#[derive(Debug)]
-#[derive(PartialEq)]
-pub struct Processor {
-    pub name: &'static str,
+pub trait Processor {
+    fn name(&self) -> &str;
+
+    /// Optionally, do "global" setup of the processor.
+    fn initialize(&mut self) -> Result<()> {
+        Ok(())
+    }
 
     /// Return true if the given path looks like it should be processed.
-    pub filter: fn(&Path) -> Result<bool>,
+    fn filter(&self, path: &Path) -> Result<bool>;
 
     /// Process file and return true if modifications were made.
-    pub process: fn(&options::Config, &Path) -> Result<bool>,
+    fn process(&self, path: &Path) -> Result<bool>;
 }
 
-macro_rules! Proc {
-    ( $name:ident ) => {
-        Processor { name: stringify!($name), filter: $name::filter, process: $name::process }
-    }
-}
 
-pub const PROCESSORS: [Processor; 4] = [
-    Proc!(ar),
-    Proc!(jar),
-    Proc!(javadoc),
-    Proc!(pyc),
+// pub state: Option<Box<dyn ProcessorState>>,
+
+// pub trait ProcessorState {}
+
+type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
+
+pub const HANDLERS: [(&str, HandlerBoxed); 4] = [
+    ("ar",      ar::Ar::boxed),
+    ("jar",     jar::Jar::boxed),
+    ("javadoc", javadoc::Javadoc::boxed),
+    ("pyc",     pyc::Pyc::boxed),
 ];
 
 pub fn handler_names() -> Vec<&'static str> {
-    PROCESSORS.iter().map(|p| p.name).collect()
+    HANDLERS.iter()
+        .map(|(name, _)| *name)
+        .collect()
 }
 
-fn filter_by_name(name: &str, filter: &[&str]) -> bool {
-    let mut negative_filter = true;
+pub fn make_handlers(config: &Rc<options::Config>) -> Vec<Box<dyn Processor>> {
+    let mut handlers: Vec<Box<dyn Processor>> = vec![];
 
-    for f in filter.iter().rev() {
-        if let Some(f) = f.strip_prefix('-') {
-            if name == f {
-                return false;
-            }
-        } else {
-            negative_filter = false;
-
-            if name == *f {
-                return true;
+    for (name, func) in &HANDLERS {
+        if config.handler_names.contains(name) {
+            let mut handler = func(config);
+            match handler.initialize() {
+                Err(e) => {
+                    warn!("Cannot initialize handler {}: {}", handler.name(), e);
+                },
+                Ok(()) => {
+                    debug!("Initialized handler {}.", handler.name());
+                    handlers.push(handler);
+                },
             }
         }
     }
 
-    negative_filter
-}
-
-pub fn active_handlers(filter: &[&str]) -> Vec<&'static Processor> {
-    PROCESSORS
-        .iter()
-        .filter(|p| filter_by_name(p.name, filter))
-        .collect()
+    handlers
 }
 
 pub fn inodes_seen() -> HashMap<u64, u8> {
@@ -80,12 +81,14 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
 }
 
 pub fn process_file_or_dir(
-    config: &options::Config,
+    handlers: &[Box<dyn Processor>],
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
 ) -> Result<u64> {
 
     let mut modifications = 0;
+
+    // FIXME: report error if path cannot be opened
 
     for entry in walkdir::WalkDir::new(input_path)
         .follow_links(false)
@@ -104,23 +107,23 @@ pub fn process_file_or_dir(
             let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
             let mut entry_mod = false;
 
-            for (n_processor, processor) in config.handlers.iter().enumerate() {
+            for (n_processor, processor) in handlers.iter().enumerate() {
                 // The same inode can be linked under multiple names
                 // with different extensions. Thus, we check if the
                 // given processor already handled this file.
                 if already_seen & (1 << n_processor) > 0 {
                     debug!("{}: already seen by {} handler",
-                           entry.path().display(), processor.name);
+                           entry.path().display(), processor.name());
                     continue;
                 }
 
-                let cond = (processor.filter)(entry.path())?;
-                debug!("{}: handler {}: {}", entry.path().display(), processor.name, cond);
+                let cond = processor.filter(entry.path())?;
+                debug!("{}: handler {}: {}", entry.path().display(), processor.name(), cond);
 
                 if cond {
                     already_seen |= 1 << n_processor;
 
-                    match (processor.process)(config, entry.path()) {
+                    match processor.process(entry.path()) {
                         Err(err) => {
                             warn!("{}: failed to process: {}", entry.path().display(), err);
                         },
@@ -269,19 +272,5 @@ impl<'a> InputOutputHelper<'a> {
         }
 
         Ok(have_mod)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_filter_by_name() {
-        assert_eq!(filter_by_name("x", &vec!["x", "y"]), true);
-        assert_eq!(filter_by_name("x", &vec!["x"]), true);
-        assert_eq!(filter_by_name("x", &vec![]), true);
-        assert_eq!(filter_by_name("x", &vec!["-x"]), false);
-        assert_eq!(filter_by_name("x", &vec!["-y"]), true);
     }
 }

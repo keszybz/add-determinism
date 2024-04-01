@@ -5,13 +5,12 @@ use std::fs::File;
 use std::io::Read;
 use std::os::linux::fs::MetadataExt;
 use std::path::Path;
+use std::rc::Rc;
 
-use add_determinism::options::Config;
+use add_determinism::options;
 use add_determinism::handlers::pyc;
 
 use super::prepare_dir;
-
-const OPTS: Config = Config::empty(111);
 
 #[test]
 fn test_verify_python3_pyc_3_12() {
@@ -33,11 +32,14 @@ fn test_verify_python3_pyc_3_12() {
 fn test_adapters() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.pyc").unwrap();
 
-    assert!(pyc::filter(&*input).unwrap());
+    let cfg = Rc::new(options::Config::empty(111));
+    let pyc = pyc::Pyc::boxed(&cfg);
+
+    assert!(pyc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc::process(&OPTS, &*input).unwrap(), true);
+    assert_eq!(pyc.process(&*input).unwrap(), true);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -50,13 +52,16 @@ fn test_adapters() {
 fn test_adapters_hardlinked() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.pyc").unwrap();
 
-    assert!(pyc::filter(&*input).unwrap());
+    let cfg = Rc::new(options::Config::empty(111));
+    let pyc = pyc::Pyc::boxed(&cfg);
+
+    assert!(pyc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
     fs::hard_link(&*input, (*input).with_extension("pyc.evenbetter")).unwrap();
 
-    assert_eq!(pyc::process(&OPTS, &*input).unwrap(), true);
+    assert_eq!(pyc.process(&*input).unwrap(), true);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -68,11 +73,14 @@ fn test_adapters_hardlinked() {
 fn test_adapters_opt_1() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.opt-1.pyc").unwrap();
 
-    assert!(pyc::filter(&*input).unwrap());
+    let cfg = Rc::new(options::Config::empty(111));
+    let pyc = pyc::Pyc::boxed(&cfg);
+
+    assert!(pyc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc::process(&OPTS, &*input).unwrap(), true);
+    assert_eq!(pyc.process(&*input).unwrap(), true);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -86,11 +94,14 @@ fn test_adapters_opt_1() {
 fn test_testrelro_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.fixed.pyc").unwrap();
 
-    assert!(pyc::filter(&*input).unwrap());
+    let cfg = Rc::new(options::Config::empty(111));
+    let pyc = pyc::Pyc::boxed(&cfg);
+
+    assert!(pyc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc::process(&OPTS, &*input).unwrap(), false);
+    assert_eq!(pyc.process(&*input).unwrap(), false);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());

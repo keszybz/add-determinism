@@ -31,16 +31,43 @@ struct Options {
     pub verbose: bool,
 }
 
-#[derive(Debug)]
-pub struct Config<'a> {
+pub struct Config {
     pub args: Vec<PathBuf>,
     pub brp: bool,
     pub verbose: bool,
     pub source_date_epoch: Option<i64>,
-    pub handlers: Vec<&'a handlers::Processor>,
+    pub handler_names: Vec<&'static str>,
 }
 
-impl Config<'_> {
+fn filter_by_name(name: &str, filter: &[&str]) -> bool {
+    let mut negative_filter = true;
+
+    for f in filter.iter().rev() {
+        if let Some(f) = f.strip_prefix('-') {
+            if name == f {
+                return false;
+            }
+        } else {
+            negative_filter = false;
+
+            if name == *f {
+                return true;
+            }
+        }
+    }
+
+    negative_filter
+}
+
+pub fn requested_handlers(filter: &[&str]) -> Vec<&'static str> {
+    handlers::HANDLERS
+        .iter()
+        .filter(|(name, _)| filter_by_name(name, filter))
+        .map(|(name, _)| *name)
+        .collect()
+}
+
+impl Config {
     pub fn make() -> Result<Option<Self>> {
         let options = Options::parse();
 
@@ -63,20 +90,18 @@ impl Config<'_> {
             return Err(anyhow!("Cannot mix --handler options with '-' and without"));
         }
 
-        let known = handlers::handler_names();
         for name in handlers
             .iter()
             .map(|x| x.strip_prefix('-').unwrap_or(x))
-            .filter(|x| !known.contains(x))
+            .filter(|x| !handlers::handler_names().contains(x))
         {
             warn!("Unknown handler name: {:?}", name);
         }
 
-        let handlers = handlers::active_handlers(&handlers);
-        if handlers.is_empty() {
-            return Err(anyhow!("Handler list is empty, nothing to do"));
+        let handler_names = requested_handlers(&handlers);
+        if handler_names.is_empty() {
+            return Err(anyhow!("Requested handler list is empty, nothing to do"));
         }
-        let handler_names: Vec<&str> = handlers.iter().map(|p| p.name).collect();
         debug!("Running with handlers: {}", handler_names.join(", "));
 
         // positional args
@@ -108,7 +133,7 @@ impl Config<'_> {
             brp: options.brp,
             verbose: options.verbose,
             source_date_epoch,
-            handlers,
+            handler_names,
         }))
     }
 
@@ -120,7 +145,21 @@ impl Config<'_> {
             brp: false,
             verbose: false,
             source_date_epoch: Some(source_date_epoch),
-            handlers: vec![],
+            handler_names: vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_by_name() {
+        assert_eq!(filter_by_name("x", &vec!["x", "y"]), true);
+        assert_eq!(filter_by_name("x", &vec!["x"]), true);
+        assert_eq!(filter_by_name("x", &vec![]), true);
+        assert_eq!(filter_by_name("x", &vec!["-x"]), false);
+        assert_eq!(filter_by_name("x", &vec!["-y"]), true);
     }
 }

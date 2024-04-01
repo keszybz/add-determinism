@@ -4,16 +4,13 @@ use anyhow::{Result, anyhow};
 use log::debug;
 use std::io::Read;
 use std::path::Path;
+use std::rc::Rc;
 
 use pyo3::prelude::*;
 use indoc::indoc;
 
 use crate::handlers::InputOutputHelper;
 use crate::options;
-
-pub fn filter(path: &Path) -> Result<bool> {
-    Ok(path.extension().is_some_and(|x| x == "pyc"))
-}
 
 pub fn verify_python3_pyc(input_path: &Path, buf: &[u8; 4]) -> Result<bool> {
     // https://github.com/nedbat/cpython/blob/main/Lib/importlib/_bootstrap_external.py#L222
@@ -300,44 +297,62 @@ pub fn verify_python3_pyc(input_path: &Path, buf: &[u8; 4]) -> Result<bool> {
     }
 }
 
-pub fn process(_config: &options::Config, input_path: &Path) -> Result<bool> {
-    let (mut io, mut input) = InputOutputHelper::open(input_path)?;
+pub struct Pyc {}
 
-    let mut buf = [0; 4];
-    input.read_exact(&mut buf)?;
+impl Pyc {
+    pub fn boxed(_config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+        Box::new(Self { })
+    }
+}
 
-    if !verify_python3_pyc(io.input_path, &buf)? {
-        return Ok(false);
+impl super::Processor for Pyc {
+    fn name(&self) -> &str {
+        "pyc"
     }
 
-    pyo3::prepare_freethreaded_python();
+    fn filter(&self, path: &Path) -> Result<bool> {
+        Ok(path.extension().is_some_and(|x| x == "pyc"))
+    }
 
-    Python::with_gil(|py| {
-        let fun: Py<PyAny> = PyModule::from_code(
-            py, indoc! {"
-            from marshalparser.marshalparser import MarshalParser
-            from pathlib import Path
+    fn process(&self, input_path: &Path) -> Result<bool> {
+        let (mut io, mut input) = InputOutputHelper::open(input_path)?;
 
-            def fix(file):
-                parser = MarshalParser(Path(file))
-                parser.parse()
-                parser.clear_unused_ref_flags(overwrite=False)"},
-            "",
-            "",
-        )?
-        .getattr("fix")?
-        .into();
+        let mut buf = [0; 4];
+        input.read_exact(&mut buf)?;
 
-        debug!("{}: Calling python fix()", io.input_path.display());
-        let path = io.input_path.to_str().unwrap();
-        fun.call1(py, (path,))
-    })?;
+        if !verify_python3_pyc(io.input_path, &buf)? {
+            return Ok(false);
+        }
 
-    // MarshalParser creates a file "input.fixed.pyc" if changes were made.
-    // If it exists, assume modifications have been made.
-    io.output_path = Some(io.input_path.with_extension("fixed.pyc"));
+        pyo3::prepare_freethreaded_python();
 
-    io.finalize(true)
+        Python::with_gil(|py| {
+            let fun: Py<PyAny> = PyModule::from_code(
+                py, indoc! {"
+                    from marshalparser.marshalparser import MarshalParser
+                    from pathlib import Path
+
+                    def fix(file):
+                        parser = MarshalParser(Path(file))
+                        parser.parse()
+                        parser.clear_unused_ref_flags(overwrite=False)"},
+                        "",
+                        "",
+                    )?
+                .getattr("fix")?
+                .into();
+
+            debug!("{}: Calling python fix()", io.input_path.display());
+            let path = io.input_path.to_str().unwrap();
+            fun.call1(py, (path,))
+        })?;
+
+        // MarshalParser creates a file "input.fixed.pyc" if changes were made.
+        // If it exists, assume modifications have been made.
+        io.output_path = Some(io.input_path.with_extension("fixed.pyc"));
+
+        io.finalize(true)
+    }
 }
 
 #[cfg(test)]
@@ -346,12 +361,15 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        assert!( filter(Path::new("/some/path/foobar.pyc")).unwrap());
-        assert!(!filter(Path::new("/some/path/foobar.apyc")).unwrap());
-        assert!( filter(Path::new("/some/path/foobar.opt-2.pyc")).unwrap());
-        assert!(!filter(Path::new("/some/path/foobar")).unwrap());
-        assert!(!filter(Path::new("/some/path/pyc")).unwrap());
-        assert!(!filter(Path::new("/some/path/pyc_pyc")).unwrap());
-        assert!(!filter(Path::new("/")).unwrap());
+        let cfg = Rc::new(options::Config::empty(0));
+        let h = Pyc::boxed(&cfg);
+
+        assert!( h.filter(Path::new("/some/path/foobar.pyc")).unwrap());
+        assert!(!h.filter(Path::new("/some/path/foobar.apyc")).unwrap());
+        assert!( h.filter(Path::new("/some/path/foobar.opt-2.pyc")).unwrap());
+        assert!(!h.filter(Path::new("/some/path/foobar")).unwrap());
+        assert!(!h.filter(Path::new("/some/path/pyc")).unwrap());
+        assert!(!h.filter(Path::new("/some/path/pyc_pyc")).unwrap());
+        assert!(!h.filter(Path::new("/")).unwrap());
     }
 }

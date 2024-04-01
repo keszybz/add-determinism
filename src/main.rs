@@ -8,6 +8,7 @@ use anyhow::{Result, anyhow};
 use log::{debug, warn};
 use std::env;
 use std::path::Path;
+use std::rc::Rc;
 
 fn brp_check(config: &options::Config) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
@@ -57,10 +58,13 @@ fn main() -> Result<()> {
 
     brp_check(&config)?;
 
+    let config = Rc::new(config);
+    let handlers = handlers::make_handlers(&config);
+
     let mut inodes_seen = handlers::inodes_seen();
 
     for input_path in &config.args {
-        handlers::process_file_or_dir(&config, &mut inodes_seen, input_path).unwrap_or_else(|err| {
+        handlers::process_file_or_dir(&handlers, &mut inodes_seen, input_path).unwrap_or_else(|err| {
             warn!("{}: failed to process: {}", input_path.display(), err);
             0
         });

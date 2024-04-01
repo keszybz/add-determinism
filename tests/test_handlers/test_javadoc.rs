@@ -2,23 +2,25 @@
 
 use std::fs;
 use std::os::linux::fs::MetadataExt;
+use std::rc::Rc;
 
-use add_determinism::options::Config;
+use add_determinism::options;
 use add_determinism::handlers::javadoc;
 
 use super::prepare_dir;
-
-const OPTS: Config = Config::empty(1704106800);
 
 #[test]
 fn test_javadoc_example() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.html").unwrap();
 
-    assert!(javadoc::filter(&*input).unwrap());
+    let cfg = Rc::new(options::Config::empty(1704106800));
+    let javadoc = javadoc::Javadoc::boxed(&cfg);
+
+    assert!(javadoc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc::process(&OPTS, &*input).unwrap(), true);
+    assert_eq!(javadoc.process(&*input).unwrap(), true);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -34,11 +36,14 @@ fn test_javadoc_example() {
 fn test_javadoc_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.fixed.html").unwrap();
 
-    assert!(javadoc::filter(&*input).unwrap());
+    let cfg = Rc::new(options::Config::empty(1704106800));
+    let javadoc = javadoc::Javadoc::boxed(&cfg);
+
+    assert!(javadoc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc::process(&OPTS, &*input).unwrap(), false);
+    assert_eq!(javadoc.process(&*input).unwrap(), false);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
