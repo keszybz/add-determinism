@@ -86,14 +86,29 @@ pub fn process_file_or_dir(
     input_path: &Path,
 ) -> Result<u64> {
 
+    let mut first = true; // WalkDir doesn't allow handling the original argument
+                          // differently from any subdirectories, but we want to return
+                          // an error if the specified path is missing or inaccessible,
+                          // so keep a flag to tell us if we're looking at the first
+                          // entry.
     let mut modifications = 0;
-
-    // FIXME: report error if path cannot be opened
 
     for entry in walkdir::WalkDir::new(input_path)
         .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok()) {
+        .into_iter() {
+            let entry = match entry {
+                Err(e) => {
+                    if first {
+                        return Err(anyhow!("Cannot open path: {}", e));
+                    } else {
+                        warn!("Cannot open path: {}", e);
+                        continue;
+                    }
+                },
+                Ok(entry) => entry,
+            };
+
+            first = false;
 
             debug!("Looking at {}…", entry.path().display());
 
