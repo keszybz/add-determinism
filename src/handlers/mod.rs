@@ -40,7 +40,7 @@ pub trait Processor {
 
 // pub trait ProcessorState {}
 
-type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
+pub type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
 
 pub const HANDLERS: [(&str, HandlerBoxed); 4] = [
     ("ar",      ar::Ar::boxed),

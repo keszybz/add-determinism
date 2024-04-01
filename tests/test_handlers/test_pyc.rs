@@ -5,12 +5,10 @@ use std::fs::File;
 use std::io::Read;
 use std::os::linux::fs::MetadataExt;
 use std::path::Path;
-use std::rc::Rc;
 
-use add_determinism::options;
 use add_determinism::handlers::pyc;
 
-use super::prepare_dir;
+use super::{prepare_dir, make_handler};
 
 #[test]
 fn test_verify_python3_pyc_3_12() {
@@ -32,8 +30,7 @@ fn test_verify_python3_pyc_3_12() {
 fn test_adapters() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.pyc").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let pyc = pyc::Pyc::boxed(&cfg);
+    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 
@@ -52,8 +49,7 @@ fn test_adapters() {
 fn test_adapters_hardlinked() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.pyc").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let pyc = pyc::Pyc::boxed(&cfg);
+    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 
@@ -73,8 +69,7 @@ fn test_adapters_hardlinked() {
 fn test_adapters_opt_1() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.opt-1.pyc").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let pyc = pyc::Pyc::boxed(&cfg);
+    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 
@@ -94,8 +89,7 @@ fn test_adapters_opt_1() {
 fn test_testrelro_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.fixed.pyc").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let pyc = pyc::Pyc::boxed(&cfg);
+    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 

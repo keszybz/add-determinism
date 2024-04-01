@@ -2,19 +2,16 @@
 
 use std::fs;
 use std::os::linux::fs::MetadataExt;
-use std::rc::Rc;
 
-use add_determinism::options;
 use add_determinism::handlers::javadoc;
 
-use super::prepare_dir;
+use super::{prepare_dir, make_handler};
 
 #[test]
 fn test_javadoc_example() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.html").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(1704106800));
-    let javadoc = javadoc::Javadoc::boxed(&cfg);
+    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 
@@ -36,8 +33,7 @@ fn test_javadoc_example() {
 fn test_javadoc_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.fixed.html").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(1704106800));
-    let javadoc = javadoc::Javadoc::boxed(&cfg);
+    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 

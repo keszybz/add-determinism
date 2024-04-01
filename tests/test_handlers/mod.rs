@@ -18,6 +18,17 @@ fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {
     Ok((Box::new(dir), Box::new(input_path)))
 }
 
+fn make_handler(
+    source_date_epoch: i64,
+    func: handlers::HandlerBoxed,
+) -> Result<Box<dyn handlers::Processor>> {
+
+    let cfg = Rc::new(options::Config::empty(source_date_epoch));
+    let mut handler = func(&cfg);
+    handler.initialize()?;
+    Ok(handler)
+}
+
 struct Trivial {}
 
 impl Trivial {

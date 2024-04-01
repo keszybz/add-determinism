@@ -7,14 +7,13 @@ use std::rc::Rc;
 use add_determinism::options;
 use add_determinism::handlers::ar;
 
-use super::prepare_dir;
+use super::{prepare_dir, make_handler};
 
 #[test]
 fn test_libempty() {
     let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let ar = ar::Ar::boxed(&cfg);
+    let ar = make_handler(111, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 
@@ -52,8 +51,7 @@ fn test_testrelro() {
 fn test_testrelro_hardlinked() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let ar = ar::Ar::boxed(&cfg);
+    let ar = make_handler(111, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 
@@ -73,8 +71,7 @@ fn test_testrelro_hardlinked() {
 fn test_testrelro_c() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.c").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let ar = ar::Ar::boxed(&cfg);
+    let ar = make_handler(111, ar::Ar::boxed).unwrap();
 
     assert!(!ar.filter(&*input).unwrap());
 
@@ -92,8 +89,7 @@ fn test_testrelro_c() {
 fn test_testrelro_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.fixed.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
-    let ar = ar::Ar::boxed(&cfg);
+    let ar = make_handler(111, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 

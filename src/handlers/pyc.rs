@@ -297,17 +297,47 @@ pub fn verify_python3_pyc(input_path: &Path, buf: &[u8; 4]) -> Result<bool> {
     }
 }
 
-pub struct Pyc {}
+pub struct Pyc {
+    fix_func: Option<Py<PyAny>>,
+}
 
 impl Pyc {
     pub fn boxed(_config: &Rc<options::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self { })
+        Box::new(Self {
+            fix_func: None,
+        })
     }
 }
 
 impl super::Processor for Pyc {
     fn name(&self) -> &str {
         "pyc"
+    }
+
+    fn initialize(&mut self) -> Result<()> {
+        pyo3::prepare_freethreaded_python();
+
+        Python::with_gil(|py| -> Result<()> {
+            let fun: Py<PyAny> = PyModule::from_code(
+                py, indoc! {"
+                    from marshalparser.marshalparser import MarshalParser
+                    from pathlib import Path
+
+                    def fix(file):
+                        parser = MarshalParser(Path(file))
+                        parser.parse()
+                        parser.clear_unused_ref_flags(overwrite=False)"},
+                        "",
+                        "",
+                    )?
+                .getattr("fix")?
+                .into();
+
+            self.fix_func = Some(fun);
+            Ok(())
+        })?;
+
+        Ok(())
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
@@ -324,27 +354,10 @@ impl super::Processor for Pyc {
             return Ok(false);
         }
 
-        pyo3::prepare_freethreaded_python();
-
         Python::with_gil(|py| {
-            let fun: Py<PyAny> = PyModule::from_code(
-                py, indoc! {"
-                    from marshalparser.marshalparser import MarshalParser
-                    from pathlib import Path
-
-                    def fix(file):
-                        parser = MarshalParser(Path(file))
-                        parser.parse()
-                        parser.clear_unused_ref_flags(overwrite=False)"},
-                        "",
-                        "",
-                    )?
-                .getattr("fix")?
-                .into();
-
             debug!("{}: Calling python fix()", io.input_path.display());
             let path = io.input_path.to_str().unwrap();
-            fun.call1(py, (path,))
+            self.fix_func.as_ref().unwrap().call1(py, (path,))
         })?;
 
         // MarshalParser creates a file "input.fixed.pyc" if changes were made.
