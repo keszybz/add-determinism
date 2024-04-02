@@ -29,12 +29,26 @@ struct Options {
     /// Turn on debugging output
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Read paths to process from this socket
+    #[arg(long,
+          conflicts_with = "args",
+          conflicts_with = "jobs")]
+    pub socket: Option<PathBuf>,
+
+    /// Use multiple worker processes
+    #[arg(short = 'j',
+          num_args = 0..=1,
+          default_missing_value = "0")]
+    pub jobs: Option<u32>,
 }
 
 pub struct Config {
     pub args: Vec<PathBuf>,
     pub brp: bool,
     pub verbose: bool,
+    pub socket: Option<PathBuf>,
+    pub jobs: Option<u32>,
     pub source_date_epoch: Option<i64>,
     pub handler_names: Vec<&'static str>,
 }
@@ -106,7 +120,7 @@ impl Config {
 
         // positional args
 
-        if options.args.is_empty() {
+        if options.socket.is_none() && options.args.is_empty() {
             return Err(anyhow!("Paths to operate on must be specified as positional arguments"));
         }
 
@@ -127,11 +141,14 @@ impl Config {
         }
 
         // finito
+        assert!(options.socket.is_some() ^ !options.args.is_empty());
 
         Ok(Some(Self {
             args: options.args,
             brp: options.brp,
             verbose: options.verbose,
+            socket: options.socket,
+            jobs: options.jobs,
             source_date_epoch,
             handler_names,
         }))
@@ -144,6 +161,8 @@ impl Config {
             args: vec![],
             brp: false,
             verbose: false,
+            socket: None,
+            jobs: None,
             source_date_epoch: Some(source_date_epoch),
             handler_names: vec![],
         }
