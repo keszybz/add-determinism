@@ -92,7 +92,7 @@ pub fn do_normal_work(config: options::Config) -> Result<()> {
 
     for input_path in &config.args {
         if let Err(err) = process_file_or_dir_with_func(
-            &|already_seen, input_path| process_file(&handlers, already_seen, input_path),
+            &|already_seen, input_path| process_file(&handlers, already_seen, input_path, None),
             &mut inodes_seen,
             &input_path) {
                 warn!("{}: failed to process: {}", input_path.display(), err);
@@ -106,6 +106,7 @@ pub fn process_file(
     handlers: &[Box<dyn Processor>],
     already_seen: &mut u8,
     input_path: &Path,
+    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<bool>>,
 ) -> Result<bool> {
 
     let mut entry_mod = false;
@@ -124,9 +125,11 @@ pub fn process_file(
         debug!("{}: handler {}: {}", input_path.display(), processor.name(), cond);
 
         if cond {
-            *already_seen |= 1 << n_processor;
-
-            match processor.process(input_path) {
+            let res = match process_wrapper {
+                Some(func) => func(*already_seen, input_path),
+                None => processor.process(input_path),
+            };
+            match res {
                 Err(err) => {
                     warn!("{}: failed to process: {}", input_path.display(), err);
                 },
@@ -135,6 +138,8 @@ pub fn process_file(
                     entry_mod = true;
                 },
             }
+
+            *already_seen |= 1 << n_processor;
         }
     }
 

@@ -31,10 +31,13 @@ struct Options {
     #[arg(short, long)]
     pub verbose: bool,
 
-    /// Read paths to process from this socket
+    /// Read paths to process from this socket.
+    /// When used, an explicit list of handlers must be given.
     #[arg(long,
+          hide = true,
           conflicts_with = "args",
-          conflicts_with = "jobs")]
+          conflicts_with = "jobs",
+          requires = "handlers")]
     pub socket: Option<RawFd>,
 
     /// Use multiple worker processes

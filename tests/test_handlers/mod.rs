@@ -58,7 +58,7 @@ pub fn process_file_or_dir(
 ) -> Result<u64> {
 
     handlers::process_file_or_dir_with_func(
-        &|already_seen, input_path| handlers::process_file(handlers, already_seen, input_path),
+        &|already_seen, input_path| handlers::process_file(handlers, already_seen, input_path, None),
         inodes_seen,
         input_path)
 }

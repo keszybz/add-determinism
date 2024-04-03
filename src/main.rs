@@ -57,28 +57,43 @@ fn brp_check(config: &options::Config) -> Result<()> {
 }
 
 pub struct Controller {
+    handlers: Vec<Box<dyn handlers::Processor>>,
     sockets: (OwnedFd, OwnedFd),
     workers: Vec<process::Child>,
 }
 
 impl Controller {
-    fn build_worker_command(config: &options::Config, fd: &RawFd) -> Result<process::Command> {
+    fn build_worker_command(
+        config: &options::Config,
+        handlers: &[Box<dyn handlers::Processor>],
+        fd: &RawFd,
+    ) -> Result<process::Command> {
+
         let mut cmd = process::Command::new(env::current_exe()?);
+
         cmd.arg("--socket").arg(fd.to_string());
         if config.brp {
             cmd.arg("--brp");
         }
         if config.verbose {
-            cmd.arg("--verbose");
+            cmd.arg("-v");
         }
+        cmd.arg("--handler")
+            .arg(handlers
+                 .iter()
+                 .map(|x| x.name())
+                 .collect::<Vec<&str>>()
+                 .join(","));
+
         if let Some(val) = config.source_date_epoch {
             cmd.env("SOURCE_DATE_EPOCH", val.to_string());
         }
+
         Ok(cmd)
     }
 
-    pub fn spawn(config: &options::Config) -> Result<Self> {
-        let n = config.jobs.unwrap();
+    pub fn create(config: &Rc<options::Config>) -> Result<Self> {
+        let handlers = handlers::make_handlers(config)?;
 
         let sockets = sys::socket::socketpair(
             sys::socket::AddressFamily::Unix,
@@ -88,10 +103,11 @@ impl Controller {
 
         fcntl::fcntl(sockets.1.as_raw_fd(), fcntl::F_SETFD(fcntl::FdFlag::FD_CLOEXEC))?;
 
-        let mut workers = vec![];
-
-        let mut cmd = Self::build_worker_command(config, &sockets.0.as_raw_fd())?;
+        let mut cmd = Self::build_worker_command(config, &handlers, &sockets.0.as_raw_fd())?;
         dbg!(&cmd);
+
+        let n = config.jobs.unwrap();
+        let mut workers = vec![];
 
         for _ in 0..n {
             let child = cmd.spawn()?;
@@ -99,9 +115,25 @@ impl Controller {
         }
 
         Ok(Controller {
+            handlers,
             sockets,
             workers,
         })
+    }
+
+    pub fn send_path(
+        &self,
+        already_seen: u8,
+        input_path: &Path,
+    ) -> Result<bool> {
+
+        let arg = input_path.to_str().unwrap().as_bytes();
+        let mut buf = vec![already_seen];
+        buf.extend(arg);
+
+        unistd::write(&self.sockets.1, &buf)?;
+
+        Ok(false)  // FIXME: pass back modification status
     }
 
     pub fn close(&mut self) -> Result<()> {
@@ -131,16 +163,19 @@ impl Controller {
     }
 
     pub fn do_work(config: options::Config) -> Result<()> {
-        let mut control = Controller::spawn(&config)?;
+        let config = Rc::new(config);
+
+        let mut control = Controller::create(&config)?;
 
         let mut inodes_seen = handlers::inodes_seen();
 
         for input_path in &config.args {
             if let Err(err) = handlers::process_file_or_dir_with_func(
                 &|already_seen, input_path| {
-                    let arg = input_path.to_str().unwrap().as_bytes();
-                    unistd::write(&control.sockets.1, arg)?;
-                    Ok(false)  // FIXME: pass back modification status
+                    handlers::process_file(&control.handlers,
+                                           already_seen,
+                                           input_path,
+                                           Some(&|already_seen, input_path| control.send_path(already_seen, input_path)))
                 },
                 &mut inodes_seen,
                 input_path)
@@ -163,23 +198,29 @@ fn do_worker_work(config: options::Config) -> Result<()> {
     let mut buf = vec![0; 4096]; // FIXME: use a better limit here?
 
     loop {
-        let input = match socket.recv(buf.as_mut_slice()) {
+        let n = match socket.recv(buf.as_mut_slice()) {
             Err(e) => {
                 return Err(anyhow!("recv failed: {}", e));
             },
-            Ok(n) => str::from_utf8(&buf[..n])?
+            Ok(n) => n,
         };
 
-        if input.is_empty() {
+        if n == 0 {
             info!("Bye!");
             return Ok(());
         }
 
-        debug!("Will process {:?}", input);
-        let input_path = PathBuf::from(input);
-        let mut already_seen = 0;
+        let mut already_seen = buf[0];
+        let input = str::from_utf8(&buf[1..n])?;
 
-        if let Err(e) = handlers::process_file(&handlers, &mut already_seen, &input_path) {
+        if input.is_empty() {
+            panic!("Empty input path");
+        }
+
+        debug!("Will process {:?} (already_seen={})", input, already_seen);
+        let input_path = PathBuf::from(input);
+
+        if let Err(e) = handlers::process_file(&handlers, &mut already_seen, &input_path, None) {
             warn!("{}: failed to process: {}", input_path.display(), e);
         }
     }
