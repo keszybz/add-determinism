@@ -5,10 +5,16 @@ mod options;
 mod simplelog;
 
 use anyhow::{Result, anyhow};
-use log::{debug, warn};
+use log::{debug, info, warn};
+use nix::{fcntl, sys, unistd};
 use std::env;
-use std::path::Path;
+use std::os::fd::{OwnedFd, RawFd, AsRawFd, FromRawFd};
+use std::os::unix::net::UnixDatagram;
+use std::os::unix::process::ExitStatusExt;
+use std::path::{Path, PathBuf};
+use std::process;
 use std::rc::Rc;
+use std::str;
 
 fn brp_check(config: &options::Config) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
@@ -50,6 +56,121 @@ fn brp_check(config: &options::Config) -> Result<()> {
     Ok(())
 }
 
+pub struct Controller {
+    sockets: (OwnedFd, OwnedFd),
+    workers: Vec<process::Child>,
+}
+
+impl Controller {
+    fn build_worker_command(config: &options::Config, fd: &RawFd) -> Result<process::Command> {
+        let mut cmd = process::Command::new(env::current_exe()?);
+        cmd.arg("--socket").arg(fd.to_string());
+        if config.brp {
+            cmd.arg("--brp");
+        }
+        if config.verbose {
+            cmd.arg("--verbose");
+        }
+        if let Some(val) = config.source_date_epoch {
+            cmd.env("SOURCE_DATE_EPOCH", val.to_string());
+        }
+        Ok(cmd)
+    }
+
+    pub fn spawn(config: &options::Config) -> Result<Self> {
+        let n = config.jobs.unwrap();
+
+        let sockets = sys::socket::socketpair(
+            sys::socket::AddressFamily::Unix,
+            sys::socket::SockType::Datagram,
+            None,
+            sys::socket::SockFlag::empty())?;
+
+        fcntl::fcntl(sockets.1.as_raw_fd(), fcntl::F_SETFD(fcntl::FdFlag::FD_CLOEXEC))?;
+
+        let mut workers = vec![];
+
+        let mut cmd = Self::build_worker_command(config, &sockets.0.as_raw_fd())?;
+        dbg!(&cmd);
+
+        for _ in 0..n {
+            let child = cmd.spawn()?;
+            workers.push(child);
+        }
+
+        Ok(Controller {
+            sockets,
+            workers,
+        })
+    }
+
+    pub fn close(&mut self) -> Result<()> {
+        debug!("Closing control socket…");
+        unistd::close(self.sockets.1.as_raw_fd())?;
+
+        debug!("Waiting for children to exit…");
+        for child in &mut self.workers {
+            let status = child.wait()?;
+            if status.success() {
+                debug!("Child {} exited with success", child.id());
+            } else if let Some(code) = status.code() {
+                warn!("Child {} reported error {}", child.id(), code);
+            } else if let Some(signal) = status.signal() {
+                warn!("Child {} killed by signal {}", child.id(), signal);
+            } else {
+                panic!("Child was terminated by gremlins");
+            }
+        }
+        debug!("Children are dead");
+        Ok(())
+    }
+
+    pub fn do_work(config: options::Config) -> Result<()> {
+        let mut control = Controller::spawn(&config)?;
+
+        unistd::write(&control.sockets.1, b"one (1)")?;
+        unistd::write(&control.sockets.1, b"two (2)")?;
+        unistd::write(&control.sockets.1, b"three (3)")?;
+        unistd::write(&control.sockets.1, b"four (4)")?;
+        unistd::write(&control.sockets.1, b"")?;
+        unistd::write(&control.sockets.1, b"")?;
+
+        control.close()
+    }
+}
+
+fn do_worker_work(config: options::Config) -> Result<()> {
+    let socket = config.socket.unwrap();
+    let socket = unsafe{ UnixDatagram::from_raw_fd(socket) };
+
+    let config = Rc::new(config);
+    let handlers = handlers::make_handlers(&config);
+
+    let mut buf = vec![0; 4096]; // FIXME: use a better limit here?
+
+    loop {
+        let input = match socket.recv(buf.as_mut_slice()) {
+            Err(e) => {
+                return Err(anyhow!("recv failed: {}", e));
+            },
+            Ok(n) => str::from_utf8(&buf[..n])?
+        };
+
+        if input.is_empty() {
+            info!("Bye!");
+            return Ok(());
+        }
+
+        debug!("Will process {:?}", input);
+        let input_path = PathBuf::from(input);
+        let mut already_seen = 0;
+
+        if let Err(e) = handlers::process_file(&handlers, &mut already_seen, &input_path) {
+            warn!("{}: failed to process: {}", input_path.display(), e);
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let config = match options::Config::make()? {
         None => { return Ok(()); },
@@ -58,17 +179,16 @@ fn main() -> Result<()> {
 
     brp_check(&config)?;
 
-    let config = Rc::new(config);
-    let handlers = handlers::make_handlers(&config);
+    if let Some(socket) = config.socket {
+        debug!("Running as worker on socket {}", socket);
+        do_worker_work(config)
 
-    let mut inodes_seen = handlers::inodes_seen();
+    } else if let Some(jobs) = config.jobs {
+        debug!("Running as controller with {} workers", jobs);
+        Controller::do_work(config)
 
-    for input_path in &config.args {
-        handlers::process_file_or_dir(&handlers, &mut inodes_seen, input_path).unwrap_or_else(|err| {
-            warn!("{}: failed to process: {}", input_path.display(), err);
-            0
-        });
+    } else {
+        // We're not the controller
+        handlers::do_normal_work(config)
     }
-
-    Ok(())
 }

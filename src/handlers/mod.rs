@@ -80,6 +80,22 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
+pub fn do_normal_work(config: options::Config) -> Result<()> {
+    let config = Rc::new(config);
+
+    let handlers = make_handlers(&config);
+    let mut inodes_seen = inodes_seen();
+
+    for input_path in &config.args {
+        process_file_or_dir(&handlers, &mut inodes_seen, input_path).unwrap_or_else(|err| {
+            warn!("{}: failed to process: {}", input_path.display(), err);
+            0
+        });
+    }
+
+    Ok(())
+}
+
 pub fn process_file(
     handlers: &[Box<dyn Processor>],
     already_seen: &mut u8,

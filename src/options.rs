@@ -6,6 +6,7 @@ use chrono::{Utc, TimeZone};
 use log::{debug, warn, LevelFilter};
 use std::env;
 use std::path::PathBuf;
+use std::os::fd::RawFd;
 
 use crate::simplelog;
 use crate::handlers;
@@ -34,7 +35,7 @@ struct Options {
     #[arg(long,
           conflicts_with = "args",
           conflicts_with = "jobs")]
-    pub socket: Option<PathBuf>,
+    pub socket: Option<RawFd>,
 
     /// Use multiple worker processes
     #[arg(short = 'j',
@@ -47,7 +48,7 @@ pub struct Config {
     pub args: Vec<PathBuf>,
     pub brp: bool,
     pub verbose: bool,
-    pub socket: Option<PathBuf>,
+    pub socket: Option<RawFd>,
     pub jobs: Option<u32>,
     pub source_date_epoch: Option<i64>,
     pub handler_names: Vec<&'static str>,
