@@ -80,6 +80,45 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
+pub fn process_file(
+    handlers: &[Box<dyn Processor>],
+    already_seen: &mut u8,
+    input_path: &Path,
+) -> Result<bool> {
+
+    let mut entry_mod = false;
+
+    for (n_processor, processor) in handlers.iter().enumerate() {
+        // The same inode can be linked under multiple names
+        // with different extensions. Thus, we check if the
+        // given processor already handled this file.
+        if *already_seen & (1 << n_processor) > 0 {
+            debug!("{}: already seen by {} handler",
+                   input_path.display(), processor.name());
+            continue;
+        }
+
+        let cond = processor.filter(input_path)?;
+        debug!("{}: handler {}: {}", input_path.display(), processor.name(), cond);
+
+        if cond {
+            *already_seen |= 1 << n_processor;
+
+            match processor.process(input_path) {
+                Err(err) => {
+                    warn!("{}: failed to process: {}", input_path.display(), err);
+                },
+                Ok(false) => {},
+                Ok(true) => {
+                    entry_mod = true;
+                },
+            }
+        }
+    }
+
+    Ok(entry_mod)
+}
+
 pub fn process_file_or_dir(
     handlers: &[Box<dyn Processor>],
     inodes_seen: &mut HashMap<u64, u8>,
@@ -120,35 +159,8 @@ pub fn process_file_or_dir(
 
             let inode = metadata.ino();
             let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
-            let mut entry_mod = false;
 
-            for (n_processor, processor) in handlers.iter().enumerate() {
-                // The same inode can be linked under multiple names
-                // with different extensions. Thus, we check if the
-                // given processor already handled this file.
-                if already_seen & (1 << n_processor) > 0 {
-                    debug!("{}: already seen by {} handler",
-                           entry.path().display(), processor.name());
-                    continue;
-                }
-
-                let cond = processor.filter(entry.path())?;
-                debug!("{}: handler {}: {}", entry.path().display(), processor.name(), cond);
-
-                if cond {
-                    already_seen |= 1 << n_processor;
-
-                    match processor.process(entry.path()) {
-                        Err(err) => {
-                            warn!("{}: failed to process: {}", entry.path().display(), err);
-                        },
-                        Ok(false) => {},
-                        Ok(true) => {
-                            entry_mod = true;
-                        },
-                    }
-                }
-            }
+            let entry_mod = process_file(handlers, &mut already_seen, entry.path())?;
 
             inodes_seen.insert(inode, already_seen); // This is the orig inode
             if entry_mod {
