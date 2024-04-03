@@ -170,15 +170,11 @@ impl Controller {
         let mut inodes_seen = handlers::inodes_seen();
 
         for input_path in &config.args {
-            if let Err(err) = handlers::process_file_or_dir_with_func(
-                &|already_seen, input_path| {
-                    handlers::process_file(&control.handlers,
-                                           already_seen,
-                                           input_path,
-                                           Some(&|already_seen, input_path| control.send_path(already_seen, input_path)))
-                },
+            if let Err(err) = handlers::process_file_or_dir(
+                &control.handlers,
                 &mut inodes_seen,
-                input_path)
+                input_path,
+                Some(&|already_seen, input_path| control.send_path(already_seen, input_path)))
             {
                 warn!("{}: failed to process: {}", input_path.display(), err);
             }

@@ -91,12 +91,15 @@ pub fn do_normal_work(config: options::Config) -> Result<()> {
     let mut inodes_seen = inodes_seen();
 
     for input_path in &config.args {
-        if let Err(err) = process_file_or_dir_with_func(
-            &|already_seen, input_path| process_file(&handlers, already_seen, input_path, None),
-            &mut inodes_seen,
-            &input_path) {
-                warn!("{}: failed to process: {}", input_path.display(), err);
-            }
+        if let Err(err) =
+            process_file_or_dir(
+                &handlers,
+                &mut inodes_seen,
+                &input_path,
+                None)
+        {
+            warn!("{}: failed to process: {}", input_path.display(), err);
+        }
     }
 
     Ok(())
@@ -146,10 +149,11 @@ pub fn process_file(
     Ok(entry_mod)
 }
 
-pub fn process_file_or_dir_with_func(
-    process_func: &dyn Fn(&mut u8, &Path) -> Result<bool>,
+pub fn process_file_or_dir(
+    handlers: &[Box<dyn Processor>],
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
+    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<bool>>,
 ) -> Result<u64> {
 
     let mut first = true; // WalkDir doesn't allow handling the original argument
@@ -187,7 +191,11 @@ pub fn process_file_or_dir_with_func(
             let inode = metadata.ino();
             let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
 
-            let entry_mod = process_func(&mut already_seen, entry.path())?;
+            let entry_mod = process_file(
+                handlers,
+                &mut already_seen,
+                entry.path(),
+                process_wrapper)?;
 
             inodes_seen.insert(inode, already_seen); // This is the orig inode
             if entry_mod {
