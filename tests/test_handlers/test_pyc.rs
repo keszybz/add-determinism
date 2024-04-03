@@ -15,7 +15,7 @@ fn test_verify_python3_pyc_3_12() {
     for p in [
         "tests/cases/adapters.cpython-312.pyc",
         "tests/cases/adapters.cpython-312.opt-1.pyc",
-        "tests/cases/adapters.cpython-312.fixed.pyc",
+        "tests/cases/adapters.cpython-312~fixed.pyc",
     ] {
         let p = Path::new(p);
 
@@ -87,7 +87,7 @@ fn test_adapters_opt_1() {
 
 #[test]
 fn test_testrelro_fixed() {
-    let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.fixed.pyc").unwrap();
+    let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312~fixed.pyc").unwrap();
 
     let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
 
