@@ -123,17 +123,20 @@ impl Controller {
 
     pub fn send_path(
         &self,
-        already_seen: u8,
+        selected_handlers: u8,
         input_path: &Path,
-    ) -> Result<bool> {
+    ) -> Result<()> {
+
+        assert!(selected_handlers > 0);
 
         let arg = input_path.to_str().unwrap().as_bytes();
-        let mut buf = vec![already_seen];
+        let mut buf = vec![selected_handlers];
         buf.extend(arg);
 
+        debug!("Sending {} (handlers=0x{:x})", input_path.display(), selected_handlers);
         unistd::write(&self.sockets.1, &buf)?;
 
-        Ok(false)  // FIXME: pass back modification status
+        Ok(())
     }
 
     pub fn close(&mut self) -> Result<()> {
@@ -174,7 +177,7 @@ impl Controller {
                 &control.handlers,
                 &mut inodes_seen,
                 input_path,
-                Some(&|already_seen, input_path| control.send_path(already_seen, input_path)))
+                Some(&|selected_handlers, input_path| control.send_path(selected_handlers, input_path)))
             {
                 warn!("{}: failed to process: {}", input_path.display(), err);
             }
@@ -182,6 +185,40 @@ impl Controller {
 
         control.close()
     }
+}
+
+pub fn process_file_with_selected_handlers(
+    handlers: &[Box<dyn handlers::Processor>],
+    selected_handlers: u8,
+    input_path: &Path,
+) -> Result<bool> {
+
+    let mut entry_mod = false;
+
+    // check if selected_handlers doesn't have any unexpected entries
+    if u8::BITS - selected_handlers.leading_zeros() > handlers.len().try_into().unwrap() {
+        return Err(anyhow!("Bad handler mask 0x{:x}", selected_handlers));
+    }
+
+    for (n_processor, processor) in handlers.iter().enumerate() {
+        let cond = selected_handlers & (1 << n_processor) > 0;
+
+        if cond {
+            debug!("{}: running handler {}", input_path.display(), processor.name());
+
+            match processor.process(input_path) {
+                Err(err) => {
+                    warn!("{}: failed to process: {}", input_path.display(), err);
+                },
+                Ok(false) => {},
+                Ok(true) => {
+                    entry_mod = true;
+                },
+            }
+        }
+    }
+
+    Ok(entry_mod)
 }
 
 fn do_worker_work(config: options::Config) -> Result<()> {
@@ -206,17 +243,19 @@ fn do_worker_work(config: options::Config) -> Result<()> {
             return Ok(());
         }
 
-        let mut already_seen = buf[0];
+        let selected_handlers = buf[0];
         let input = str::from_utf8(&buf[1..n])?;
 
         if input.is_empty() {
             panic!("Empty input path");
         }
 
-        debug!("Will process {:?} (already_seen={})", input, already_seen);
+        debug!("Will process {:?} (selected_handlers={})", input, selected_handlers);
         let input_path = PathBuf::from(input);
 
-        if let Err(e) = handlers::process_file(&handlers, &mut already_seen, &input_path, None) {
+        if let Err(e) =
+            process_file_with_selected_handlers(&handlers, selected_handlers, &input_path)
+        {
             warn!("{}: failed to process: {}", input_path.display(), e);
         }
     }

@@ -105,14 +105,19 @@ pub fn do_normal_work(config: options::Config) -> Result<()> {
     Ok(())
 }
 
-pub fn process_file(
+fn process_file(
     handlers: &[Box<dyn Processor>],
     already_seen: &mut u8,
     input_path: &Path,
-    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<bool>>,
+    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<()>>,
 ) -> Result<bool> {
 
+    // When processing locally, this says whether modifications have
+    // been made. When processing remotely, it just says whether we
+    // requested some processing.
     let mut entry_mod = false;
+
+    let mut selected_handlers = 0;
 
     for (n_processor, processor) in handlers.iter().enumerate() {
         // The same inode can be linked under multiple names
@@ -128,21 +133,29 @@ pub fn process_file(
         debug!("{}: handler {}: {}", input_path.display(), processor.name(), cond);
 
         if cond {
-            let res = match process_wrapper {
-                Some(func) => func(*already_seen, input_path),
-                None => processor.process(input_path),
-            };
-            match res {
-                Err(err) => {
-                    warn!("{}: failed to process: {}", input_path.display(), err);
-                },
-                Ok(false) => {},
-                Ok(true) => {
-                    entry_mod = true;
-                },
-            }
+            selected_handlers |= 1 << n_processor;
 
-            *already_seen |= 1 << n_processor;
+            if process_wrapper.is_none() {
+                match processor.process(input_path) {
+                    Err(err) => {
+                        warn!("{}: failed to process: {}", input_path.display(), err);
+                    },
+                    Ok(false) => {},
+                    Ok(true) => {
+                        entry_mod = true;
+                    },
+                }
+
+            }
+        }
+
+        *already_seen |= selected_handlers;
+    }
+
+    if let Some(wrapper) = process_wrapper {
+        if selected_handlers > 0 {
+            wrapper(selected_handlers, input_path)?;
+            entry_mod = true;
         }
     }
 
@@ -153,7 +166,7 @@ pub fn process_file_or_dir(
     handlers: &[Box<dyn Processor>],
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
-    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<bool>>,
+    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<()>>,
 ) -> Result<u64> {
 
     let mut first = true; // WalkDir doesn't allow handling the original argument
