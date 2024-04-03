@@ -55,7 +55,7 @@ pub fn handler_names() -> Vec<&'static str> {
         .collect()
 }
 
-pub fn make_handlers(config: &Rc<options::Config>) -> Vec<Box<dyn Processor>> {
+pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Processor>>> {
     let mut handlers: Vec<Box<dyn Processor>> = vec![];
 
     for (name, func) in &HANDLERS {
@@ -63,7 +63,11 @@ pub fn make_handlers(config: &Rc<options::Config>) -> Vec<Box<dyn Processor>> {
             let mut handler = func(config);
             match handler.initialize() {
                 Err(e) => {
-                    warn!("Cannot initialize handler {}: {}", handler.name(), e);
+                    let e = anyhow!("Cannot initialize handler {}: {}", handler.name(), e);
+                    if config.strict_handlers {
+                        return Err(e);
+                    }
+                    warn!("{}", e);
                 },
                 Ok(()) => {
                     debug!("Initialized handler {}.", handler.name());
@@ -73,7 +77,7 @@ pub fn make_handlers(config: &Rc<options::Config>) -> Vec<Box<dyn Processor>> {
         }
     }
 
-    handlers
+    Ok(handlers)
 }
 
 pub fn inodes_seen() -> HashMap<u64, u8> {
@@ -83,7 +87,7 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
 pub fn do_normal_work(config: options::Config) -> Result<()> {
     let config = Rc::new(config);
 
-    let handlers = make_handlers(&config);
+    let handlers = make_handlers(&config)?;
     let mut inodes_seen = inodes_seen();
 
     for input_path in &config.args {

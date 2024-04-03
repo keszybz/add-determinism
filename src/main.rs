@@ -158,7 +158,7 @@ fn do_worker_work(config: options::Config) -> Result<()> {
     let socket = unsafe{ UnixDatagram::from_raw_fd(socket) };
 
     let config = Rc::new(config);
-    let handlers = handlers::make_handlers(&config);
+    let handlers = handlers::make_handlers(&config)?;
 
     let mut buf = vec![0; 4096]; // FIXME: use a better limit here?
 

@@ -3,7 +3,7 @@
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use chrono::{Utc, TimeZone};
-use log::{debug, warn, LevelFilter};
+use log::{debug, LevelFilter};
 use std::env;
 use std::path::PathBuf;
 use std::os::fd::RawFd;
@@ -52,6 +52,7 @@ pub struct Config {
     pub jobs: Option<u32>,
     pub source_date_epoch: Option<i64>,
     pub handler_names: Vec<&'static str>,
+    pub strict_handlers: bool,
 }
 
 fn filter_by_name(name: &str, filter: &[&str]) -> bool {
@@ -74,12 +75,33 @@ fn filter_by_name(name: &str, filter: &[&str]) -> bool {
     negative_filter
 }
 
-pub fn requested_handlers(filter: &[&str]) -> Vec<&'static str> {
-    handlers::HANDLERS
+pub fn requested_handlers(filter: &[&str]) -> Result<(Vec<&'static str>, bool)> {
+    if filter.iter().any(|x|  x.starts_with('-')) &&
+       filter.iter().any(|x| !x.starts_with('-')) {
+            return Err(anyhow!("Cannot mix --handler options with '-' and without"));
+        }
+
+    for name in filter
+        .iter()
+        .map(|x| x.strip_prefix('-').unwrap_or(x))
+        .filter(|x| !handlers::handler_names().contains(x))
+    {
+        return Err(anyhow!("Unknown handler name: {:?}", name));
+    }
+
+    let list: Vec<&'static str> = handlers::HANDLERS
         .iter()
         .filter(|(name, _)| filter_by_name(name, filter))
         .map(|(name, _)| *name)
-        .collect()
+        .collect();
+
+    if list.is_empty() {
+        return Err(anyhow!("Requested handler list is empty, will have nothing to do"));
+    }
+
+    let strict = !filter.is_empty();
+    debug!("Requested handlers: {} (strict={})", list.join(", "), strict);
+    Ok((list, strict))
 }
 
 impl Config {
@@ -100,24 +122,7 @@ impl Config {
             return Ok(None);
         }
 
-        if handlers.iter().any(|x| x.starts_with('-')) &&
-            handlers.iter().any(|x| !x.starts_with('-')) {
-            return Err(anyhow!("Cannot mix --handler options with '-' and without"));
-        }
-
-        for name in handlers
-            .iter()
-            .map(|x| x.strip_prefix('-').unwrap_or(x))
-            .filter(|x| !handlers::handler_names().contains(x))
-        {
-            warn!("Unknown handler name: {:?}", name);
-        }
-
-        let handler_names = requested_handlers(&handlers);
-        if handler_names.is_empty() {
-            return Err(anyhow!("Requested handler list is empty, nothing to do"));
-        }
-        debug!("Running with handlers: {}", handler_names.join(", "));
+        let (handler_names, strict_handlers) = requested_handlers(&handlers)?;
 
         // positional args
 
@@ -152,6 +157,7 @@ impl Config {
             jobs: options.jobs,
             source_date_epoch,
             handler_names,
+            strict_handlers,
         }))
     }
 
@@ -166,6 +172,7 @@ impl Config {
             jobs: None,
             source_date_epoch: Some(source_date_epoch),
             handler_names: vec![],
+            strict_handlers: false,
         }
     }
 }
