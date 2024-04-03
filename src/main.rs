@@ -105,6 +105,11 @@ impl Controller {
     }
 
     pub fn close(&mut self) -> Result<()> {
+        debug!("Sending quit command to children…");
+        for _ in &mut self.workers {
+            unistd::write(&self.sockets.1, b"")?;
+        }
+
         debug!("Closing control socket…");
         unistd::close(self.sockets.1.as_raw_fd())?;
 
@@ -128,12 +133,21 @@ impl Controller {
     pub fn do_work(config: options::Config) -> Result<()> {
         let mut control = Controller::spawn(&config)?;
 
-        unistd::write(&control.sockets.1, b"one (1)")?;
-        unistd::write(&control.sockets.1, b"two (2)")?;
-        unistd::write(&control.sockets.1, b"three (3)")?;
-        unistd::write(&control.sockets.1, b"four (4)")?;
-        unistd::write(&control.sockets.1, b"")?;
-        unistd::write(&control.sockets.1, b"")?;
+        let mut inodes_seen = handlers::inodes_seen();
+
+        for input_path in &config.args {
+            if let Err(err) = handlers::process_file_or_dir_with_func(
+                &|already_seen, input_path| {
+                    let arg = input_path.to_str().unwrap().as_bytes();
+                    unistd::write(&control.sockets.1, arg)?;
+                    Ok(false)  // FIXME: pass back modification status
+                },
+                &mut inodes_seen,
+                input_path)
+            {
+                warn!("{}: failed to process: {}", input_path.display(), err);
+            }
+        }
 
         control.close()
     }

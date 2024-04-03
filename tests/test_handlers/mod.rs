@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use std::rc::Rc;
+use std::collections::HashMap;
 
 use add_determinism::options;
 use add_determinism::handlers;
@@ -50,6 +51,18 @@ impl handlers::Processor for Trivial {
     }
 }
 
+pub fn process_file_or_dir(
+    handlers: &[Box<dyn handlers::Processor>],
+    inodes_seen: &mut HashMap<u64, u8>,
+    input_path: &Path,
+) -> Result<u64> {
+
+    handlers::process_file_or_dir_with_func(
+        &|already_seen, input_path| handlers::process_file(handlers, already_seen, input_path),
+        inodes_seen,
+        input_path)
+}
+
 #[test]
 fn test_inode_map() {
     let (dir, _input) = prepare_dir("tests/cases/libempty.a").unwrap();
@@ -57,20 +70,20 @@ fn test_inode_map() {
     let mut handlers = vec![ Trivial::boxed() ];
     let mut cache = handlers::inodes_seen();
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
+    let mods = process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
     assert_eq!(mods, 1);
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
+    let mods = process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
     assert_eq!(mods, 0);
 
     assert_eq!(cache.len(), 1);
 
     handlers.push(Trivial::boxed());
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
+    let mods = process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
     assert_eq!(mods, 1);
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
+    let mods = process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
     assert_eq!(mods, 0);
 
     assert_eq!(cache.len(), 1);
@@ -86,10 +99,10 @@ fn test_inode_map_2() {
     let handlers = vec![ar];
     let mut cache = handlers::inodes_seen();
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
+    let mods = process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
     assert_eq!(mods, 1);
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
+    let mods = process_file_or_dir(&handlers, &mut cache, dir.path()).unwrap();
     assert_eq!(mods, 0); // The file was already processed, so no change
 
     // The inode changes because we rewrite the file

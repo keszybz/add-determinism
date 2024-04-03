@@ -87,10 +87,12 @@ pub fn do_normal_work(config: options::Config) -> Result<()> {
     let mut inodes_seen = inodes_seen();
 
     for input_path in &config.args {
-        process_file_or_dir(&handlers, &mut inodes_seen, input_path).unwrap_or_else(|err| {
-            warn!("{}: failed to process: {}", input_path.display(), err);
-            0
-        });
+        if let Err(err) = process_file_or_dir_with_func(
+            &|already_seen, input_path| process_file(&handlers, already_seen, input_path),
+            &mut inodes_seen,
+            &input_path) {
+                warn!("{}: failed to process: {}", input_path.display(), err);
+            }
     }
 
     Ok(())
@@ -135,8 +137,8 @@ pub fn process_file(
     Ok(entry_mod)
 }
 
-pub fn process_file_or_dir(
-    handlers: &[Box<dyn Processor>],
+pub fn process_file_or_dir_with_func(
+    process_func: &dyn Fn(&mut u8, &Path) -> Result<bool>,
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
 ) -> Result<u64> {
@@ -176,7 +178,7 @@ pub fn process_file_or_dir(
             let inode = metadata.ino();
             let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
 
-            let entry_mod = process_file(handlers, &mut already_seen, entry.path())?;
+            let entry_mod = process_func(&mut already_seen, entry.path())?;
 
             inodes_seen.insert(inode, already_seen); // This is the orig inode
             if entry_mod {
