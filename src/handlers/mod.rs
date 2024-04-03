@@ -299,7 +299,8 @@ impl<'a> InputOutputHelper<'a> {
             let output_path = self.output_path.as_ref().unwrap();
 
             let mut output = self.output.as_mut();
-            let mut fallback_output;
+            let mut fallback_output = None;
+
             if output.is_none() {
                 fallback_output = match File::open(output_path) {
                     Ok(some) => Some(some),
@@ -339,6 +340,15 @@ impl<'a> InputOutputHelper<'a> {
 
                 info!("{}: rewriting with normalized contents", self.input_path.display());
                 io::copy(output, &mut input_writer)?;
+
+                if fallback_output.is_some() {
+                    debug!("{}: unlinking", output_path.display());
+                    if let Err(e) = fs::remove_file(output_path) {
+                        if e.kind() != io::ErrorKind::NotFound {
+                            warn!("Failed to remove {}: {}", self.input_path.display(), e);
+                        }
+                    }
+                }
 
                 input_writer.set_modified(meta.modified()?)?;
             }
