@@ -84,10 +84,10 @@ pub fn requested_handlers(filter: &[&str]) -> Result<(Vec<&'static str>, bool)> 
             return Err(anyhow!("Cannot mix --handler options with '-' and without"));
         }
 
-    for name in filter
+    if let Some(name) = filter
         .iter()
         .map(|x| x.strip_prefix('-').unwrap_or(x))
-        .filter(|x| !handlers::handler_names().contains(x))
+        .find(|x| !handlers::handler_names().contains(x))
     {
         return Err(anyhow!("Unknown handler name: {:?}", name));
     }

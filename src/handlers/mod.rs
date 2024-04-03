@@ -95,7 +95,7 @@ pub fn do_normal_work(config: options::Config) -> Result<()> {
             process_file_or_dir(
                 &handlers,
                 &mut inodes_seen,
-                &input_path,
+                input_path,
                 None)
         {
             warn!("{}: failed to process: {}", input_path.display(), err);
@@ -105,11 +105,13 @@ pub fn do_normal_work(config: options::Config) -> Result<()> {
     Ok(())
 }
 
+pub type ProcessWrapper<'a> = Option<&'a dyn Fn(u8, &Path) -> Result<()>>;
+
 fn process_file(
     handlers: &[Box<dyn Processor>],
     already_seen: &mut u8,
     input_path: &Path,
-    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<()>>,
+    process_wrapper: ProcessWrapper,
 ) -> Result<bool> {
 
     // When processing locally, this says whether modifications have
@@ -166,7 +168,7 @@ pub fn process_file_or_dir(
     handlers: &[Box<dyn Processor>],
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
-    process_wrapper: Option<&dyn Fn(u8, &Path) -> Result<()>>,
+    process_wrapper: ProcessWrapper,
 ) -> Result<u64> {
 
     let mut first = true; // WalkDir doesn't allow handling the original argument
