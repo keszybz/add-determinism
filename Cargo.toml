@@ -20,7 +20,7 @@ indoc = "2.0.4"
 log = { version = "0.4", features = ["std"] }
 nix = { version = "0.28.0", features = ["fs", "socket"] }
 pyo3 = "0.20.0"
-regex = "1.10.0"
+regex = { version = "1.10.0", default-features = false, features = ["std", "perf", "unicode-case"] }
 time = "0.3.34"
 walkdir = "2.5.0"
 zip = { version = "0.6.0", default-features = false, features = ["deflate", "deflate-zlib", "time"] }
