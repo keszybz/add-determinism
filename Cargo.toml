@@ -23,7 +23,7 @@ pyo3 = "0.20.0"
 regex = "1.10.0"
 time = "0.3.34"
 walkdir = "2.5.0"
-zip = "0.6.0"
+zip = { version = "0.6.0", default-features = false, features = ["deflate", "deflate-zlib", "time"] }
 
 [dev-dependencies]
 tempfile = "3"
