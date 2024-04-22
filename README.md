@@ -12,6 +12,26 @@ and the copy is renamed over the original.
 If processing fails, a warning is emitted,
 but no modifications are made and the program returns success.
 
+## Usage
+
+### Standalone
+
+```console
+$ add-determinism /path/to/file /path/to/directory
+```
+Note that the program works in-place, replacing input files with the rewritten versions (if any modifications are made).
+
+Some useful options:
+
+* `-v` — enable debug output
+* `-j [N]` — use `N` workers (or as many as CPUs, if `N` is not given)
+* `--handler list|HANDLER|-HANDLER` — constrain the list of handlers. Takes a comma-separated list of names, either a list of "positive" names, in which case only listed handlers will be used, or a list of "negative" names, each prefixed by minus, in which case the listed handlers will not be used. By default, handlers that cannot be initialized are skipped with a warning. If a "positive" list is given, failure to initialize a handler will cause an error. The special value `list` can be used to list known handlers.
+* `--brp` — enable "build root program" mode, see below.
+
+### In an rpm build environment
+
+When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be defined and not empty. All arguments must be below `$RPM_BUILD_ROOT`. This option is intended to be used in rpm macros that define post-install steps. See [redhat-rpm-config pull request #293](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/293) for a draft pull request that does this.
+
 ## Processors
 
 ### `ar`
