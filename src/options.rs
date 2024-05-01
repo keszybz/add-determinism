@@ -16,9 +16,10 @@ use crate::handlers;
 #[command(version, about, long_about = None)]
 struct Options {
     /// Paths to operate on
-    pub args: Vec<PathBuf>,
+    #[arg(value_name = "path")]
+    pub inputs: Vec<PathBuf>,
 
-    /// Handlers to enable;
+    /// Handlers to enable/disable;
     /// use --handler=list to list
     #[arg(long = "handler")]
     pub handlers: Vec<String>,
@@ -35,20 +36,21 @@ struct Options {
     /// When used, an explicit list of handlers must be given.
     #[arg(long,
           hide = true,
-          conflicts_with = "args",
+          conflicts_with = "inputs",
           conflicts_with = "jobs",
           requires = "handlers")]
     pub socket: Option<RawFd>,
 
-    /// Use multiple worker processes
+    /// Use N worker processes
     #[arg(short = 'j',
+          value_name = "N",
           num_args = 0..=1,
           default_missing_value = "0")]
     pub jobs: Option<u32>,
 }
 
 pub struct Config {
-    pub args: Vec<PathBuf>,
+    pub inputs: Vec<PathBuf>,
     pub brp: bool,
     pub verbose: bool,
     pub socket: Option<RawFd>,
@@ -129,7 +131,7 @@ impl Config {
 
         // positional args
 
-        if options.socket.is_none() && options.args.is_empty() {
+        if options.socket.is_none() && options.inputs.is_empty() {
             return Err(anyhow!("Paths to operate on must be specified as positional arguments"));
         }
 
@@ -150,10 +152,10 @@ impl Config {
         }
 
         // finito
-        assert!(options.socket.is_some() ^ !options.args.is_empty());
+        assert!(options.socket.is_some() ^ !options.inputs.is_empty());
 
         Ok(Some(Self {
-            args: options.args,
+            inputs: options.inputs,
             brp: options.brp,
             verbose: options.verbose,
             socket: options.socket,
@@ -168,7 +170,7 @@ impl Config {
     // FIXME: should this be marked as #[cfg(test)]? But then the tests don't compile.
     pub const fn empty(source_date_epoch: i64) -> Self {
         Self {
-            args: vec![],
+            inputs: vec![],
             brp: false,
             verbose: false,
             socket: None,

@@ -131,7 +131,7 @@ impl Controller {
 
         let mut inodes_seen = handlers::inodes_seen();
 
-        for input_path in &config.args {
+        for input_path in &config.inputs {
             if let Err(err) = handlers::process_file_or_dir(
                 &control.handlers,
                 &mut inodes_seen,

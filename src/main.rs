@@ -40,7 +40,7 @@ fn brp_check(config: &options::Config) -> Result<()> {
             return Err(anyhow!("RPM_BUILD_ROOT={:?} is not allowed", build_root));
         }
 
-        for arg in &config.args {
+        for arg in &config.inputs {
             if !arg.starts_with(&build_root_path) {
                 return Err(anyhow!("Path {:?} is outside of $RPM_BUILD_ROOT", arg));
             }

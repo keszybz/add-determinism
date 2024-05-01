@@ -90,7 +90,7 @@ pub fn do_normal_work(config: options::Config) -> Result<()> {
     let handlers = make_handlers(&config)?;
     let mut inodes_seen = inodes_seen();
 
-    for input_path in &config.args {
+    for input_path in &config.inputs {
         if let Err(err) =
             process_file_or_dir(
                 &handlers,
