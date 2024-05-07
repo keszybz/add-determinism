@@ -3,6 +3,8 @@
 pub mod ar;
 pub mod jar;
 pub mod javadoc;
+
+#[cfg(feature="python")]
 pub mod pyc;
 
 use anyhow::{Context, Result, anyhow};
@@ -42,10 +44,12 @@ pub trait Processor {
 
 pub type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
 
-pub const HANDLERS: [(&str, HandlerBoxed); 4] = [
+pub const HANDLERS: &[(&str, HandlerBoxed)] = &[
     ("ar",      ar::Ar::boxed),
     ("jar",     jar::Jar::boxed),
     ("javadoc", javadoc::Javadoc::boxed),
+
+    #[cfg(feature="python")]
     ("pyc",     pyc::Pyc::boxed),
 ];
 
@@ -58,7 +62,7 @@ pub fn handler_names() -> Vec<&'static str> {
 pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Processor>>> {
     let mut handlers: Vec<Box<dyn Processor>> = vec![];
 
-    for (name, func) in &HANDLERS {
+    for (name, func) in HANDLERS {
         if config.handler_names.contains(name) {
             let mut handler = func(config);
             match handler.initialize() {

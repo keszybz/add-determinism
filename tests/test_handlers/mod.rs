@@ -1,5 +1,7 @@
 mod test_ar;
 mod test_javadoc;
+
+#[cfg(feature="python")]
 mod test_pyc;
 
 use anyhow::Result;
