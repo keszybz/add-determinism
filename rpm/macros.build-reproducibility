@@ -13,5 +13,5 @@
 %add_determinism_paths %{buildroot}
 
 %__os_install_post_build_reproducibility \
-    %{?__brp_add_determinism:%{__brp_add_determinism} --brp %{?_smp_build_ncpus:-j%{_smp_build_ncpus}} %{add_determinism_options} %{add_determinism_paths}} \
+    %{?__brp_add_determinism:%{__brp_add_determinism} --brp %{?_smp_build_ncpus:-j%{_smp_build_ncpus}} %{?add_determinism_options} %{?add_determinism_paths}} \
 %{nil}

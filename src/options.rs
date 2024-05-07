@@ -3,7 +3,7 @@
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use chrono::{Utc, TimeZone};
-use log::{debug, LevelFilter};
+use log::{debug, info, LevelFilter};
 use std::env;
 use std::path::PathBuf;
 use std::os::fd::RawFd;
@@ -131,8 +131,8 @@ impl Config {
 
         // positional args
 
-        if options.socket.is_none() && options.inputs.is_empty() {
-            return Err(anyhow!("Paths to operate on must be specified as positional arguments"));
+        if options.socket.is_none() && options.inputs.is_empty() && !options.brp {
+            info!("No arguments specified, nothing to do. 😎");
         }
 
         // $SOURCE_DATE_EPOCH
@@ -150,9 +150,6 @@ impl Config {
                        Utc.timestamp_opt(v, 0).unwrap());
             },
         }
-
-        // finito
-        assert!(options.socket.is_some() ^ !options.inputs.is_empty());
 
         Ok(Some(Self {
             inputs: options.inputs,
