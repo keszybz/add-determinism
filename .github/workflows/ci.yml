@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: MIT
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 4 * * *"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Build and run tests (rust ${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - beta
+          - nightly
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install Rust
+        run: |
+          rm -f ~/.cargo/bin/*fmt ~/.cargo/bin/rust-analyzer
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+      - name: Install toolchain
+        run: |
+          rustup toolchain install ${{ matrix.rust }}
+          rustup default ${{ matrix.rust }}
+      - name: Build
+        run: cargo build --release --verbose
+      - name: Run tests
+        run: cargo check --release --verbose
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install Rust
+        run: |
+          rm -f ~/.cargo/bin/*fmt ~/.cargo/bin/rust-analyzer
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly
+          rustup default nightly
+      - name: Validate clippy
+        run: cargo clippy -- -D warnings
