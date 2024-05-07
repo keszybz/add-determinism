@@ -16,16 +16,9 @@ fn brp_check(config: &options::Config) -> Result<()> {
 
     let arg0 = env::args().next().unwrap();
 
-    let brp = config.brp || Path::new(&arg0)
-        .file_name()
-        .ok_or(anyhow!("Exe path doesn't have a file name?"))?
-        .to_str()
-        .ok_or(anyhow!("Exe file name is not valid unicode"))?
-        .starts_with("brp-");
+    debug!("Running as {}… (brp={})", arg0, if config.brp { "true" } else { "false" });
 
-    debug!("Running as {}… (brp={})", arg0, if brp { "true" } else { "false" });
-
-    if brp {
+    if config.brp {
         let build_root = env::var("RPM_BUILD_ROOT")
             .map_err(|_| anyhow!("RPM_BUILD_ROOT variable is not defined"))?;
 
