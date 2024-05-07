@@ -1,5 +1,9 @@
 # Build postprocessor to reset metadata fields for build reproducibility
 
+<a href="https://repology.org/project/rust:add-determinism/versions">
+    <img src="https://repology.org/badge/vertical-allrepos/rust:add-determinism.svg" alt="Packaging status" align="right">
+</a>
+
 This crate provides a binary `add-determinism` that one or more paths,
 and will recursively process those paths,
 attempting to run the handlers on any files with extensions that match.
