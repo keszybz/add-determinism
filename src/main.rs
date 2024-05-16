@@ -9,11 +9,33 @@ use anyhow::{Result, anyhow};
 use log::debug;
 use std::env;
 use std::path::Path;
+use std::process::Command;
+use std::os::unix::process::CommandExt;
+
+fn maybe_reexec_full() -> Result<()> {
+    // If we are called 'add-determinism.nopython', if
+    // 'add-determinism' exists, reexec into it.
+    let mut args = env::args();
+
+    let arg0 = args.next().unwrap();
+    let path = Path::new(&arg0);
+    if path.extension().is_some_and(|x| x == "nopython") {
+        let path2 = path.with_extension("");
+        let args: Vec<_> = args.collect();
+        if path2.exists() {
+            // Can't use logging here, because it hasn't been initialized yet.
+            println!("Reexecuting as {} {}", path2.display(), args.join(" "));
+            let err = Command::new(path2).args(args).exec();
+            return Err(err.into());
+        }
+    }
+
+    Ok(()) // no reexec necessary
+}
 
 fn brp_check(config: &options::Config) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
     // the target binary, so we cannot use that.
-
     let arg0 = env::args().next().unwrap();
 
     debug!("Running as {}… (brp={})", arg0, if config.brp { "true" } else { "false" });
@@ -44,6 +66,8 @@ fn brp_check(config: &options::Config) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    maybe_reexec_full()?;
+
     let config = match options::Config::make()? {
         None => { return Ok(()); },
         Some(some) => some
