@@ -88,25 +88,30 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
-pub fn do_normal_work(config: options::Config) -> Result<()> {
+pub fn do_normal_work(config: options::Config) -> Result<u64> {
     let config = Rc::new(config);
 
     let handlers = make_handlers(&config)?;
     let mut inodes_seen = inodes_seen();
+    let mut n_paths = 0;
 
     for input_path in &config.inputs {
-        if let Err(err) =
-            process_file_or_dir(
-                &handlers,
-                &mut inodes_seen,
-                input_path,
-                None)
+        match process_file_or_dir(
+            &handlers,
+            &mut inodes_seen,
+            input_path,
+            None)
         {
-            warn!("{}: failed to process: {}", input_path.display(), err);
+            Err(err) => {
+                warn!("{}: failed to process: {}", input_path.display(), err);
+            },
+            Ok(num) => {
+                n_paths += num;
+            }
         }
     }
 
-    Ok(())
+    Ok(n_paths)
 }
 
 pub type ProcessWrapper<'a> = Option<&'a dyn Fn(u8, &Path) -> Result<()>>;

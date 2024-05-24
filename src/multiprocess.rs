@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::{Result, anyhow};
-use log::{debug, info, warn};
+use log::{debug, warn};
 use nix::{fcntl, sys, unistd};
 use std::env;
 use std::os::fd::{OwnedFd, RawFd, AsRawFd, FromRawFd};
@@ -63,7 +63,7 @@ impl Controller {
         fcntl::fcntl(sockets.1.as_raw_fd(), fcntl::F_SETFD(fcntl::FdFlag::FD_CLOEXEC))?;
 
         let mut cmd = Self::build_worker_command(config, &handlers, &sockets.0.as_raw_fd())?;
-        dbg!(&cmd);
+        // dbg!(&cmd);
 
         let n = config.jobs.unwrap();
         let mut workers = vec![];
@@ -124,25 +124,32 @@ impl Controller {
         Ok(())
     }
 
-    pub fn do_work(config: options::Config) -> Result<()> {
+    pub fn do_work(config: options::Config) -> Result<u64> {
         let config = Rc::new(config);
 
         let mut control = Controller::create(&config)?;
 
         let mut inodes_seen = handlers::inodes_seen();
+        let mut n_paths = 0;
 
         for input_path in &config.inputs {
-            if let Err(err) = handlers::process_file_or_dir(
+            match handlers::process_file_or_dir(
                 &control.handlers,
                 &mut inodes_seen,
                 input_path,
                 Some(&|selected_handlers, input_path| control.send_path(selected_handlers, input_path)))
             {
-                warn!("{}: failed to process: {}", input_path.display(), err);
-            }
+                Err(err) => {
+                    warn!("{}: failed to process: {}", input_path.display(), err);
+                },
+                Ok(num) => {
+                    n_paths += num;
+                }
+            };
         }
 
-        control.close()
+        control.close()?;
+        Ok(n_paths)
     }
 }
 
@@ -198,7 +205,7 @@ pub fn do_worker_work(config: options::Config) -> Result<()> {
         };
 
         if n == 0 {
-            info!("Bye!");
+            debug!("Worker {} says bye!", process::id());
             return Ok(());
         }
 

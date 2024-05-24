@@ -6,7 +6,7 @@ mod multiprocess;
 mod simplelog;
 
 use anyhow::{Result, anyhow};
-use log::debug;
+use log::{debug, info};
 use std::env;
 use std::path::Path;
 
@@ -49,18 +49,24 @@ fn main() -> Result<()> {
         Some(some) => some
     };
 
+
     brp_check(&config)?;
+
+    let n_paths;
 
     if let Some(socket) = config.socket {
         debug!("Running as worker on socket {}", socket);
-        multiprocess::do_worker_work(config)
+        return multiprocess::do_worker_work(config);
 
     } else if let Some(jobs) = config.jobs {
         debug!("Running as controller with {} workers", jobs);
-        multiprocess::Controller::do_work(config)
+        n_paths = multiprocess::Controller::do_work(config)?;
 
     } else {
         // We're not the controller
-        handlers::do_normal_work(config)
+        n_paths = handlers::do_normal_work(config)?;
     }
+
+    info!("Processed {} paths", n_paths);
+    Ok(())
 }
