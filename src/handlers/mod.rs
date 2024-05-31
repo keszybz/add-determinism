@@ -67,11 +67,11 @@ pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Process
             let mut handler = func(config);
             match handler.initialize() {
                 Err(e) => {
-                    let e = anyhow!("Cannot initialize handler {}: {}", handler.name(), e);
                     if config.strict_handlers {
+                        let e = anyhow!("Cannot initialize handler {}: {}", handler.name(), e);
                         return Err(e);
                     }
-                    warn!("{}", e);
+                    warn!("Handler {} skipped: {}", handler.name(), e);
                 },
                 Ok(()) => {
                     debug!("Initialized handler {}.", handler.name());
