@@ -4,9 +4,10 @@
     <img src="https://repology.org/badge/vertical-allrepos/add-determinism.svg" alt="Packaging status" align="right">
 </a>
 
-This crate provides a binary `add-determinism` that one or more paths,
+This crate provides the program `add-determinism` that takes one or more paths as arguments,
 and will recursively process those paths,
 attempting to run the handlers on any files with extensions that match.
+(Each argument can be either a single file or a directory to be processed recursively.)
 
 For each processed file, a temporary file is opened,
 the contents are rewritten,
@@ -15,6 +16,9 @@ and the copy is renamed over the original.
 
 If processing fails, a warning is emitted,
 but no modifications are made and the program returns success.
+
+The purpose of this tool is to elimiate common source of non-determinism in builds,
+making it easier to create reproducible (package) builds.
 
 ## Usage
 
@@ -34,7 +38,11 @@ Some useful options:
 
 ### In an rpm build environment
 
-When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be defined and not empty. All arguments must be below `$RPM_BUILD_ROOT`. This option is intended to be used in rpm macros that define post-install steps. See [redhat-rpm-config pull request #293](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/293) for a draft pull request that does this.
+When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be defined and not empty.
+All arguments must be below `$RPM_BUILD_ROOT`.
+This option is intended to be used in rpm macros that define post-install steps.
+See [redhat-rpm-config pull request #293](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/293)
+for a pull request that added a call to `add-determinism` in `%__os_install_post`.
 
 ## Processors
 
