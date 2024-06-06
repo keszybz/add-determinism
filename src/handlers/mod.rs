@@ -3,8 +3,6 @@
 pub mod ar;
 pub mod jar;
 pub mod javadoc;
-
-#[cfg(feature="python")]
 pub mod pyc;
 
 use anyhow::{Context, Result, anyhow};
@@ -48,8 +46,6 @@ pub const HANDLERS: &[(&str, HandlerBoxed)] = &[
     ("ar",      ar::Ar::boxed),
     ("jar",     jar::Jar::boxed),
     ("javadoc", javadoc::Javadoc::boxed),
-
-    #[cfg(feature="python")]
     ("pyc",     pyc::Pyc::boxed),
 ];
 

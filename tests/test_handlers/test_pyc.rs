@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::fs::File;
-use std::io::Read;
 use std::os::linux::fs::MetadataExt;
 use std::path::Path;
 
@@ -11,7 +10,7 @@ use add_determinism::handlers::pyc;
 use super::{prepare_dir, make_handler};
 
 #[test]
-fn test_verify_python3_pyc_3_12() {
+fn test_pyc_python_version() {
     for p in [
         "tests/cases/adapters.cpython-312.pyc",
         "tests/cases/adapters.cpython-312.opt-1.pyc",
@@ -19,10 +18,8 @@ fn test_verify_python3_pyc_3_12() {
     ] {
         let p = Path::new(p);
 
-        let mut buf = [0; 4];
-        File::open(p).unwrap().read_exact(&mut buf).unwrap();
-
-        assert_eq!(pyc::verify_python3_pyc(&p, &buf).unwrap(), true);
+        let parser = pyc::PycParser::from_file(p, File::open(p).unwrap()).unwrap();
+        assert_eq!(parser.version, (3, 12));
     }
 }
 
