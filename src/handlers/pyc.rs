@@ -677,7 +677,7 @@ impl PycParser {
                 let new_index = new_index.unwrap() as u32;
 
                 data[r.offset + 1 .. r.offset + 5]
-                    .copy_from_slice(&new_index.to_ne_bytes());
+                    .copy_from_slice(&new_index.to_le_bytes());
             }
         }
 
