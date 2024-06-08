@@ -35,3 +35,7 @@ lto = true
 opt-level = "z"
 codegen-units = 1
 panic = "abort"
+
+[build-dependencies]
+anyhow = "1.0.12"
+glob = "0.3.1"
