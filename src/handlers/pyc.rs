@@ -284,7 +284,7 @@ pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32
         3000..=3439 => Ok(((3, 10), 16)),
         3000..=3495 => Ok(((3, 11), 16)),
         3000..=3531 => Ok(((3, 12), 16)),
-        3000..=3600 => Ok(((3, 13), 16)),
+        3000..=3599 => Ok(((3, 13), 16)),
         3600..=4000 => Ok(((3, 14), 16)),
         _ => Err(anyhow!("{}: not a pyc file, unknown version ({:?})", input_path.display(), buf)),
     }
