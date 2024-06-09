@@ -20,7 +20,7 @@ const PYLONG_MARSHAL_SHIFT: i32 = 15;
 const TRACE: bool = false;
 
 pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
-    // https://github.com/nedbat/cpython/blob/main/Lib/importlib/_bootstrap_external.py#L222
+    // https://github.com/python/cpython/blob/main/Lib/importlib/_bootstrap_external.py#L247
     //
     //     Python 1.5:   20121
     //     Python 1.5.1: 20121
@@ -248,8 +248,11 @@ pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32
     //     Python 3.13a1 3567 (Reimplement line number propagation by the compiler)
     //     Python 3.13a1 3568 (Change semantics of END_FOR)
     //     Python 3.13a5 3569 (Specialize CONTAINS_OP)
-    //
-    //     Python 3.14 will start with 3600
+    //     Python 3.13a6 3570 (Add __firstlineno__ class attribute)
+    //     Python 3.14a1 3600 (Add LOAD_COMMON_CONSTANT)
+    //     Python 3.14a1 3601 (Fix miscompilation of private names in generic classes)
+
+    //     Python 3.15 will start with 3700
 
     if buf[2..] != [0x0D, 0x0A] {
         return Err(anyhow!("{}: not a pyc file, wrong magic ({:?})", input_path.display(), buf));
@@ -277,15 +280,16 @@ pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32
         3000..=3230 => Ok(((3, 3), 12)),
         3000..=3310 => Ok(((3, 4), 12)),
         3000..=3351 => Ok(((3, 5), 12)),
-        3000..=3379 => Ok(((3, 6), 12)),
-        3000..=3394 => Ok(((3, 7), 16)),
-        3000..=3413 => Ok(((3, 8), 16)),
-        3000..=3425 => Ok(((3, 9), 16)),
-        3000..=3439 => Ok(((3, 10), 16)),
-        3000..=3495 => Ok(((3, 11), 16)),
-        3000..=3531 => Ok(((3, 12), 16)),
-        3000..=3599 => Ok(((3, 13), 16)),
-        3600..=4000 => Ok(((3, 14), 16)),
+        3360 | 3361 | 3370..=3379 => Ok(((3, 6), 12)),
+        3390..=3394 => Ok(((3, 7), 16)),
+        3400 | 3401 | 3410..=3413 => Ok(((3, 8), 16)),
+        3400..=3425 => Ok(((3, 9), 16)),
+        3430..=3439 => Ok(((3, 10), 16)),
+        3450..=3495 => Ok(((3, 11), 16)),
+        3500..=3531 => Ok(((3, 12), 16)),
+        3550..=3599 => Ok(((3, 13), 16)),
+        3600..=3699 => Ok(((3, 14), 16)),
+        3700..=4000 => Ok(((3, 15), 16)),
         _ => Err(anyhow!("{}: not a pyc file, unknown version ({:?})", input_path.display(), buf)),
     }
 }
