@@ -601,12 +601,19 @@ impl PycParser {
     }
 
     fn read_ref(&mut self, offset: usize) -> Result<Object> {
-        let flag_ref = self._read_long()?;
+        let index = self._read_long()?;
 
-        self.flag_refs[flag_ref as usize].number += 1;
-        self.irefs.push(Ref { offset, number: flag_ref as u64 });
+        // Is this a valid reference to one of the already-flagged objects?
+        if index as usize >= self.flag_refs.len() {
+            return Err(anyhow!("{}:0x{:x}: bad reference to flag_ref {} (have {})",
+                               self.input_path.display(), self.read_offset,
+                               index, self.flag_refs.len()));
+        }
 
-        let desc = format!("REF to index {}", flag_ref);
+        self.flag_refs[index as usize].number += 1;
+        self.irefs.push(Ref { offset, number: index as u64 });
+
+        let desc = format!("REF to index {}", index);
         Ok(Object::Ref(desc))
     }
 
