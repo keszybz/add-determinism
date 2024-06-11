@@ -3,8 +3,6 @@
 pub mod ar;
 pub mod jar;
 pub mod javadoc;
-
-#[cfg(feature="python")]
 pub mod pyc;
 
 use anyhow::{Context, Result, anyhow};
@@ -48,8 +46,6 @@ pub const HANDLERS: &[(&str, HandlerBoxed)] = &[
     ("ar",      ar::Ar::boxed),
     ("jar",     jar::Jar::boxed),
     ("javadoc", javadoc::Javadoc::boxed),
-
-    #[cfg(feature="python")]
     ("pyc",     pyc::Pyc::boxed),
 ];
 
@@ -308,7 +304,7 @@ impl<'a> InputOutputHelper<'a> {
             let output_path = self.output_path.as_ref().unwrap();
 
             let mut output = self.output.as_mut();
-            let mut fallback_output = None;
+            let mut fallback_output;
 
             if output.is_none() {
                 fallback_output = match File::open(output_path) {
@@ -350,12 +346,10 @@ impl<'a> InputOutputHelper<'a> {
                 info!("{}: rewriting with normalized contents", self.input_path.display());
                 io::copy(output, &mut input_writer)?;
 
-                if fallback_output.is_some() {
-                    debug!("{}: unlinking", output_path.display());
-                    if let Err(e) = fs::remove_file(output_path) {
-                        if e.kind() != io::ErrorKind::NotFound {
-                            warn!("Failed to remove {}: {}", self.input_path.display(), e);
-                        }
+                debug!("{}: unlinking", output_path.display());
+                if let Err(e) = fs::remove_file(output_path) {
+                    if e.kind() != io::ErrorKind::NotFound {
+                        warn!("Failed to remove {}: {}", self.input_path.display(), e);
                     }
                 }
 
