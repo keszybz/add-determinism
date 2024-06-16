@@ -1,18 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use chrono::{TimeZone, Utc};
 use clap::Parser;
-use chrono::{Utc, TimeZone};
 use log::{debug, info, LevelFilter};
 use std::env;
-use std::path::PathBuf;
 use std::os::fd::RawFd;
+use std::path::PathBuf;
 
-use crate::simplelog;
 use crate::handlers;
+use crate::simplelog;
 
-#[derive(Debug)]
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Options {
     /// Paths to operate on

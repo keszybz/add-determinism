@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 mod handlers;
-mod options;
 mod multiprocess;
+mod options;
 mod simplelog;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use log::{debug, info};
 use std::env;
 use std::path::Path;
@@ -26,7 +26,8 @@ fn brp_check(config: &options::Config) -> Result<()> {
             return Err(anyhow!("Empty RPM_BUILD_ROOT is not allowed"));
         }
 
-        let build_root_path = Path::new(&build_root).canonicalize()
+        let build_root_path = Path::new(&build_root)
+            .canonicalize()
             .map_err(|e| anyhow!("Cannot canonicalize RPM_BUILD_ROOT={:?}: {}", build_root, e))?;
 
         if build_root_path == Path::new("/") {
@@ -48,7 +49,6 @@ fn main() -> Result<()> {
         None => { return Ok(()); },
         Some(some) => some
     };
-
 
     brp_check(&config)?;
 

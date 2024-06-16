@@ -5,17 +5,17 @@ pub mod jar;
 pub mod javadoc;
 pub mod pyc;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, Metadata};
 use std::io;
 use std::io::Seek;
-use std::path::{Path, PathBuf};
 use std::os::linux::fs::MetadataExt as _;
-use std::os::unix::fs::MetadataExt as _;
 use std::os::unix::fs as unix_fs;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::options;
@@ -34,7 +34,6 @@ pub trait Processor {
     /// Process file and return true if modifications were made.
     fn process(&self, path: &Path) -> Result<bool>;
 }
-
 
 // pub state: Option<Box<dyn ProcessorState>>,
 
@@ -68,11 +67,11 @@ pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Process
                         return Err(e);
                     }
                     warn!("Handler {} skipped: {}", handler.name(), e);
-                },
+                }
                 Ok(()) => {
                     debug!("Initialized handler {}.", handler.name());
                     handlers.push(handler);
-                },
+                }
             }
         }
     }
@@ -100,7 +99,7 @@ pub fn do_normal_work(config: options::Config) -> Result<u64> {
         {
             Err(err) => {
                 warn!("{}: failed to process: {}", input_path.display(), err);
-            },
+            }
             Ok(num) => {
                 n_paths += num;
             }
@@ -146,13 +145,12 @@ fn process_file(
                 match processor.process(input_path) {
                     Err(err) => {
                         warn!("{}: failed to process: {}", input_path.display(), err);
-                    },
-                    Ok(false) => {},
+                    }
+                    Ok(false) => {}
                     Ok(true) => {
                         entry_mod = true;
-                    },
+                    }
                 }
-
             }
         }
 
@@ -315,7 +313,7 @@ impl<'a> InputOutputHelper<'a> {
                         } else {
                             return Err(anyhow!("{}: cannot reopen temporary file: {}", output_path.display(), e));
                         }
-                    },
+                    }
                 };
                 output = fallback_output.as_mut();
             }

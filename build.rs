@@ -15,8 +15,8 @@ fn test_python_stdlib_{}() {{
     test_python_stdlib_file(\"{}\");
 }}
 ",
-               num,
-               entry?.display(),
+            num,
+            entry?.display(),
         )?;
     }
     Ok(())

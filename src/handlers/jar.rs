@@ -2,13 +2,13 @@
 
 use anyhow::Result;
 use log::{debug, info, warn};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::options;
 use crate::handlers::InputOutputHelper;
+use crate::options;
 
 const FILE_HEADER_MAGIC: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const CENTRAL_HEADER_FILE_MAGIC: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
@@ -27,7 +27,6 @@ impl super::Processor for Jar {
     fn name(&self) -> &str {
         "jar"
     }
-
 
     fn filter(&self, path: &Path) -> Result<bool> {
         Ok(path.extension().is_some_and(|x| x == "jar"))
@@ -58,9 +57,9 @@ impl super::Processor for Jar {
             match zip::DateTime::try_from(epoch) {
                 Err(err) => {
                     warn!("Cannot convert epoch {} to zip::DateTime: {}", epoch, err);
-                },
+                }
                 Ok(dos_epoch) => {
-                    let ts : [u8; 4] = [
+                    let ts: [u8; 4] = [
                         (dos_epoch.timepart() & 0xFF).try_into().unwrap(),
                         (dos_epoch.timepart() >> 8).try_into().unwrap(),
                         (dos_epoch.datepart() & 0xFF).try_into().unwrap(),
@@ -72,7 +71,8 @@ impl super::Processor for Jar {
 
                     // Open output again to adjust timestamps
                     let output_path = io.output_path.as_ref().unwrap();
-                    let mut output = zip::ZipArchive::new(BufReader::new(File::open(output_path)?))?;
+                    let mut output =
+                        zip::ZipArchive::new(BufReader::new(File::open(output_path)?))?;
 
                     let overwrite = io.output.as_mut().unwrap();
 
@@ -85,7 +85,7 @@ impl super::Processor for Jar {
                                       input_path.display(),
                                       file.name(),
                                       e);
-                            },
+                            }
                             Ok(mtime) => {
                                 info!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, epoch,
                                       mtime > epoch);
@@ -123,10 +123,10 @@ impl super::Processor for Jar {
 
                                     have_mod = true;
                                 }
-                            },
+                            }
                         }
                     }
-                },
+                }
             }
         }
 

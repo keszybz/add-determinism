@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use log::debug;
+use std::fs::File;
 use std::io::{Read, Write};
 use std::iter;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
@@ -345,11 +345,7 @@ enum Object {
     Ref(String),
 }
 
-#[derive(Debug)]
-#[derive(Ord)]
-#[derive(Eq)]
-#[derive(PartialOrd)]
-#[derive(PartialEq)]
+#[derive(Debug, Ord, Eq, PartialOrd, PartialEq)]
 struct Ref {
     offset: usize,
     number: u64, // This is either the reference count (for flag refs)
@@ -362,7 +358,7 @@ pub struct PycParser {
     input_path: PathBuf,
     pub version: (u32, u32),
 
-    data: Vec<u8>,  // the whole contents of the input file
+    data: Vec<u8>,      // the whole contents of the input file
     read_offset: usize, // index into .data
 
     irefs: Vec<Ref>,
@@ -418,7 +414,7 @@ impl PycParser {
         if (b & (0x1 << 7)) != 0 {
             b &= !(0x1 << 7);
 
-            self.flag_refs.push(Ref{ offset, number: 0 });
+            self.flag_refs.push(Ref { offset, number: 0 });
         }
 
         if TRACE {

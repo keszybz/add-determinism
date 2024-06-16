@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use log::debug;
-use std::io::{BufWriter, Read, Write, Seek};
+use std::io::{BufWriter, Read, Seek, Write};
 use std::path::Path;
 use std::rc::Rc;
 
