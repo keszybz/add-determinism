@@ -5,11 +5,11 @@ mod test_pyc;
 use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tempfile::TempDir;
 use std::rc::Rc;
+use tempfile::TempDir;
 
-use add_determinism::options;
 use add_determinism::handlers;
+use add_determinism::options;
 
 fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {
     let dir = TempDir::new()?;
@@ -22,7 +22,6 @@ fn make_handler(
     source_date_epoch: i64,
     func: handlers::HandlerBoxed,
 ) -> Result<Box<dyn handlers::Processor>> {
-
     let cfg = Rc::new(options::Config::empty(source_date_epoch));
     let mut handler = func(&cfg);
     handler.initialize()?;
@@ -54,7 +53,7 @@ impl handlers::Processor for Trivial {
 fn test_inode_map() {
     let (dir, _input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
-    let mut handlers = vec![ Trivial::boxed() ];
+    let mut handlers = vec![Trivial::boxed()];
     let mut cache = handlers::inodes_seen();
 
     let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();

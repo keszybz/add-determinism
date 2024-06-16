@@ -34,6 +34,8 @@ jobs:
         run: |
           rustup toolchain install ${{ matrix.rust }}
           rustup default ${{ matrix.rust }}
+      - name: cargo fmt
+        run: cargo fmt -- --check -l
       - name: Build
         run: cargo build --release --verbose
       - name: Run tests

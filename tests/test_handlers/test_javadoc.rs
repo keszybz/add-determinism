@@ -5,7 +5,7 @@ use std::os::linux::fs::MetadataExt;
 
 use add_determinism::handlers::javadoc;
 
-use super::{prepare_dir, make_handler};
+use super::{make_handler, prepare_dir};
 
 #[test]
 fn test_javadoc_example() {
@@ -25,8 +25,10 @@ fn test_javadoc_example() {
     assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_ne!(orig.st_ino(), new.st_ino());
 
-    assert_eq!(fs::read_to_string(&*input).unwrap(),
-               fs::read_to_string("tests/cases/javadoc-example.fixed.html").unwrap());
+    assert_eq!(
+        fs::read_to_string(&*input).unwrap(),
+        fs::read_to_string("tests/cases/javadoc-example.fixed.html").unwrap()
+    );
 }
 
 #[test]

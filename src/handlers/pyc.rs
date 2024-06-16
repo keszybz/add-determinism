@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use log::debug;
+use std::fs::File;
 use std::io::{Read, Write};
 use std::iter;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
@@ -255,7 +255,11 @@ pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32
     //     Python 3.15 will start with 3700
 
     if buf[2..] != [0x0D, 0x0A] {
-        return Err(anyhow!("{}: not a pyc file, wrong magic ({:?})", input_path.display(), buf));
+        return Err(anyhow!(
+            "{}: not a pyc file, wrong magic ({:?})",
+            input_path.display(),
+            buf
+        ));
     }
 
     let val = ((buf[1] as u32) << 8) + (buf[0] as u32);
@@ -290,7 +294,11 @@ pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32
         3550..=3599 => Ok(((3, 13), 16)),
         3600..=3699 => Ok(((3, 14), 16)),
         3700..=4000 => Ok(((3, 15), 16)),
-        _ => Err(anyhow!("{}: not a pyc file, unknown version ({:?})", input_path.display(), buf)),
+        _ => Err(anyhow!(
+            "{}: not a pyc file, unknown version ({:?})",
+            input_path.display(),
+            buf
+        )),
     }
 }
 
@@ -303,7 +311,7 @@ impl Pyc {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]   // Right now, we only use dbg! to print the object.
+#[allow(dead_code)] // Right now, we only use dbg! to print the object.
 enum Object {
     Code {
         argcount: u32,
@@ -345,11 +353,7 @@ enum Object {
     Ref(String),
 }
 
-#[derive(Debug)]
-#[derive(Ord)]
-#[derive(Eq)]
-#[derive(PartialOrd)]
-#[derive(PartialEq)]
+#[derive(Debug, Ord, Eq, PartialOrd, PartialEq)]
 struct Ref {
     offset: usize,
     number: u64, // This is either the reference count (for flag refs)
@@ -362,7 +366,7 @@ pub struct PycParser {
     input_path: PathBuf,
     pub version: (u32, u32),
 
-    data: Vec<u8>,  // the whole contents of the input file
+    data: Vec<u8>,      // the whole contents of the input file
     read_offset: usize, // index into .data
 
     irefs: Vec<Ref>,
@@ -375,9 +379,18 @@ impl PycParser {
         input.read_exact(&mut buf)?;
 
         let (version, header_length) = pyc_python_version(input_path, &buf)?;
-        debug!("{}: pyc file for Python {}.{}", input_path.display(), version.0, version.1);
+        debug!(
+            "{}: pyc file for Python {}.{}",
+            input_path.display(),
+            version.0,
+            version.1
+        );
         if TRACE {
-            debug!("{}: pyc file header is {} bytes", input_path.display(), header_length);
+            debug!(
+                "{}: pyc file header is {} bytes",
+                input_path.display(),
+                header_length
+            );
         }
 
         let mut data = Vec::from(&buf);
@@ -402,8 +415,12 @@ impl PycParser {
             self.read_offset += count;
             Ok(offset)
         } else {
-            Err(anyhow!("{}:{}: cannot take {} bytes",
-                        self.input_path.display(), self.read_offset, count))
+            Err(anyhow!(
+                "{}:{}: cannot take {} bytes",
+                self.input_path.display(),
+                self.read_offset,
+                count
+            ))
         }
     }
 
@@ -418,7 +435,7 @@ impl PycParser {
         if (b & (0x1 << 7)) != 0 {
             b &= !(0x1 << 7);
 
-            self.flag_refs.push(Ref{ offset, number: 0 });
+            self.flag_refs.push(Ref { offset, number: 0 });
         }
 
         if TRACE {
@@ -530,13 +547,13 @@ impl PycParser {
 
     fn _read_long(&mut self) -> Result<u32> {
         let offset = self.take(4)?;
-        let bytes = &self.data[offset .. offset + 4];
+        let bytes = &self.data[offset..offset + 4];
         Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     fn _read_long_signed(&mut self) -> Result<i32> {
         let offset = self.take(4)?;
-        let bytes = &self.data[offset .. offset + 4];
+        let bytes = &self.data[offset..offset + 4];
         Ok(i32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
@@ -556,7 +573,7 @@ impl PycParser {
         let n = self._read_long_signed()?;
 
         let mut result = 0_i32.to_bigint().unwrap();
-        for i in 0 .. n.abs() {
+        for i in 0..n.abs() {
             let part = self._read_short()?;
             result += part.to_bigint().unwrap() << (i * PYLONG_MARSHAL_SHIFT) as usize;
         }
@@ -574,7 +591,7 @@ impl PycParser {
         };
 
         let offset = self.take(size)?;
-        Ok(Object::String(self.data[offset .. offset + size].to_vec()))
+        Ok(Object::String(self.data[offset..offset + size].to_vec()))
 
         // let string = str::from_utf8(&bytes)?;
         // Ok(Object::String(string.to_string()))
@@ -605,13 +622,20 @@ impl PycParser {
 
         // Is this a valid reference to one of the already-flagged objects?
         if index as usize >= self.flag_refs.len() {
-            return Err(anyhow!("{}:0x{:x}: bad reference to flag_ref {} (have {})",
-                               self.input_path.display(), self.read_offset,
-                               index, self.flag_refs.len()));
+            return Err(anyhow!(
+                "{}:0x{:x}: bad reference to flag_ref {} (have {})",
+                self.input_path.display(),
+                self.read_offset,
+                index,
+                self.flag_refs.len()
+            ));
         }
 
         self.flag_refs[index as usize].number += 1;
-        self.irefs.push(Ref { offset, number: index as u64 });
+        self.irefs.push(Ref {
+            offset,
+            number: index as u64,
+        });
 
         let desc = format!("REF to index {}", index);
         Ok(Object::Ref(desc))
@@ -619,7 +643,7 @@ impl PycParser {
 
     fn _read_binary_float(&mut self) -> Result<f64> {
         let offset = self.take(8)?;
-        let bytes = &self.data[offset .. offset + 8];
+        let bytes = &self.data[offset..offset + 8];
         Ok(f64::from_le_bytes(bytes.try_into().unwrap()))
     }
 
@@ -628,8 +652,10 @@ impl PycParser {
     }
 
     fn read_binary_complex(&mut self) -> Result<Object> {
-        Ok(Object::Complex(self._read_binary_float()?,
-                           self._read_binary_float()?))
+        Ok(Object::Complex(
+            self._read_binary_float()?,
+            self._read_binary_float()?,
+        ))
     }
 
     fn read_dict(&mut self) -> Result<Object> {
@@ -650,10 +676,10 @@ impl PycParser {
 
     fn clear_unused_flag_refs(&mut self) -> Result<(bool, Vec<u8>)> {
         // Sequence of flag_refs and irefs ordered by number of byte in a file
-        let final_list =
-            iter::zip(self.flag_refs.iter(), iter::repeat(true))
-            .merge_by(iter::zip(self.irefs.iter(), iter::repeat(false)),
-                      |&a, &b| a.0.offset < b.0.offset);
+        let final_list = iter::zip(self.flag_refs.iter(), iter::repeat(true)).merge_by(
+            iter::zip(self.irefs.iter(), iter::repeat(false)),
+            |&a, &b| a.0.offset < b.0.offset,
+        );
 
         // A map where at a beginning, index in list == number of flag_ref
         // but when unused flag is removed:
@@ -687,12 +713,15 @@ impl PycParser {
                 }
                 let new_index = new_index.unwrap() as u32;
 
-                data[r.offset + 1 .. r.offset + 5]
-                    .copy_from_slice(&new_index.to_le_bytes());
+                data[r.offset + 1..r.offset + 5].copy_from_slice(&new_index.to_le_bytes());
             }
         }
 
-        debug!("{}: removed {} unused FLAG_REFs", self.input_path.display(), removed_count);
+        debug!(
+            "{}: removed {} unused FLAG_REFs",
+            self.input_path.display(),
+            removed_count
+        );
         assert_eq!(data == self.data, removed_count == 0);
         Ok((removed_count > 0, data))
     }
@@ -712,7 +741,7 @@ impl super::Processor for Pyc {
 
         let mut parser = PycParser::from_file(input_path, input)?;
         if parser.version < (3, 0) {
-            return Ok(false);  // We don't want to touch python2 files
+            return Ok(false); // We don't want to touch python2 files
         }
 
         parser.read_object()?;
@@ -736,9 +765,9 @@ mod tests {
         let cfg = Rc::new(options::Config::empty(0));
         let h = Pyc::boxed(&cfg);
 
-        assert!( h.filter(Path::new("/some/path/foobar.pyc")).unwrap());
+        assert!(h.filter(Path::new("/some/path/foobar.pyc")).unwrap());
         assert!(!h.filter(Path::new("/some/path/foobar.apyc")).unwrap());
-        assert!( h.filter(Path::new("/some/path/foobar.opt-2.pyc")).unwrap());
+        assert!(h.filter(Path::new("/some/path/foobar.opt-2.pyc")).unwrap());
         assert!(!h.filter(Path::new("/some/path/foobar")).unwrap());
         assert!(!h.filter(Path::new("/some/path/pyc")).unwrap());
         assert!(!h.filter(Path::new("/some/path/pyc_pyc")).unwrap());

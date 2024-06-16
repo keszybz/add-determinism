@@ -4,10 +4,10 @@ use std::fs;
 use std::os::linux::fs::MetadataExt;
 use std::rc::Rc;
 
-use add_determinism::options;
 use add_determinism::handlers::ar;
+use add_determinism::options;
 
-use super::{prepare_dir, make_handler};
+use super::{make_handler, prepare_dir};
 
 #[test]
 fn test_libempty() {

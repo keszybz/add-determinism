@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use log::debug;
-use std::io::{BufWriter, Read, Write, Seek};
+use std::io::{BufWriter, Read, Seek, Write};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -20,7 +20,9 @@ pub struct Ar {
 
 impl Ar {
     pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self { config: config.clone() })
+        Box::new(Self {
+            config: config.clone(),
+        })
     }
 }
 
@@ -40,7 +42,11 @@ impl super::Processor for Ar {
         let mut buf = [0; MAGIC.len()];
         input.read_exact(&mut buf)?;
         if buf != MAGIC {
-            return Err(anyhow!("{}: wrong magic ({:?})", io.input_path.display(), buf));
+            return Err(anyhow!(
+                "{}: wrong magic ({:?})",
+                io.input_path.display(),
+                buf
+            ));
         }
 
         io.open_output()?;
@@ -52,14 +58,22 @@ impl super::Processor for Ar {
             let pos = input.stream_position()?;
             let mut buf = [0; FILE_HEADER_LENGTH];
 
-            debug!("{}: reading file header at offset {}", io.input_path.display(), pos);
+            debug!(
+                "{}: reading file header at offset {}",
+                io.input_path.display(),
+                pos
+            );
 
             match input.read(&mut buf)? {
                 0 => break,
-                FILE_HEADER_LENGTH => {},
+                FILE_HEADER_LENGTH => {}
                 n => {
-                    return Err(anyhow!("{}: short read of {} bytes at offset {}",
-                                       io.input_path.display(), n, pos));
+                    return Err(anyhow!(
+                        "{}: short read of {} bytes at offset {}",
+                        io.input_path.display(),
+                        n,
+                        pos
+                    ));
                 }
             }
 
@@ -74,8 +88,13 @@ impl super::Processor for Ar {
             // 58     59     File magic                \140\012
 
             if &buf[58..] != FILE_HEADER_MAGIC {
-                return Err(anyhow!("{}: wrong magic in file header at offset {}: {:?} != {:?}",
-                                   io.input_path.display(), pos, &buf[58..], FILE_HEADER_MAGIC));
+                return Err(anyhow!(
+                    "{}: wrong magic in file header at offset {}: {:?} != {:?}",
+                    io.input_path.display(),
+                    pos,
+                    &buf[58..],
+                    FILE_HEADER_MAGIC
+                ));
             }
 
             let name = std::str::from_utf8(&buf[0..16])?.trim_end_matches(' ');
@@ -85,7 +104,11 @@ impl super::Processor for Ar {
 
             if name == "//" {
                 // System V/GNU table of long filenames
-                debug!("{}: long filename index, size={}", io.input_path.display(), size);
+                debug!(
+                    "{}: long filename index, size={}",
+                    io.input_path.display(),
+                    size
+                );
             } else {
                 let mtime = std::str::from_utf8(&buf[16..28])?.trim_end_matches(' ');
                 let mtime = mtime.parse::<i64>()?;
@@ -99,11 +122,22 @@ impl super::Processor for Ar {
                 let mode = std::str::from_utf8(&buf[40..48])?.trim_end_matches(' ');
                 let mode = mode.parse::<u64>()?;
 
-                debug!("{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
-                       io.input_path.display(), name, mtime, uid, gid, mode, size);
+                debug!(
+                    "{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
+                    io.input_path.display(),
+                    name,
+                    mtime,
+                    uid,
+                    gid,
+                    mode,
+                    size
+                );
 
-                if self.config.source_date_epoch.is_some() && mtime > self.config.source_date_epoch.unwrap() {
-                    let source_date_epoch_str = format!("{:<12}", self.config.source_date_epoch.unwrap());
+                if self.config.source_date_epoch.is_some()
+                    && mtime > self.config.source_date_epoch.unwrap()
+                {
+                    let source_date_epoch_str =
+                        format!("{:<12}", self.config.source_date_epoch.unwrap());
 
                     buf[16..28].copy_from_slice(source_date_epoch_str.as_bytes());
                     have_mod = true;
@@ -141,9 +175,9 @@ mod tests {
         let cfg = Rc::new(options::Config::empty(0));
         let h = Ar::boxed(&cfg);
 
-        assert!( h.filter(Path::new("/some/path/libfoobar.a")).unwrap());
+        assert!(h.filter(Path::new("/some/path/libfoobar.a")).unwrap());
         assert!(!h.filter(Path::new("/some/path/libfoobar.aa")).unwrap());
-        assert!( h.filter(Path::new("/some/path/libfoobar.a.a")).unwrap());
+        assert!(h.filter(Path::new("/some/path/libfoobar.a.a")).unwrap());
         assert!(!h.filter(Path::new("/some/path/libfoobara")).unwrap());
         assert!(!h.filter(Path::new("/some/path/a")).unwrap());
         assert!(!h.filter(Path::new("/some/path/a_a")).unwrap());

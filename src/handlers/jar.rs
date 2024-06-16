@@ -2,13 +2,13 @@
 
 use anyhow::Result;
 use log::{debug, info, warn};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::options;
 use crate::handlers::InputOutputHelper;
+use crate::options;
 
 const FILE_HEADER_MAGIC: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const CENTRAL_HEADER_FILE_MAGIC: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
@@ -19,7 +19,9 @@ pub struct Jar {
 
 impl Jar {
     pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self { config: config.clone() })
+        Box::new(Self {
+            config: config.clone(),
+        })
     }
 }
 
@@ -27,7 +29,6 @@ impl super::Processor for Jar {
     fn name(&self) -> &str {
         "jar"
     }
-
 
     fn filter(&self, path: &Path) -> Result<bool> {
         Ok(path.extension().is_some_and(|x| x == "jar"))
@@ -43,7 +44,9 @@ impl super::Processor for Jar {
         let output = BufWriter::new(io.output.as_ref().unwrap());
         let mut output = zip::ZipWriter::new(output);
 
-        let epoch = self.config.source_date_epoch
+        let epoch = self
+            .config
+            .source_date_epoch
             .map(|v| time::OffsetDateTime::from_unix_timestamp(v).unwrap());
 
         for i in 0..input.len() {
@@ -58,9 +61,9 @@ impl super::Processor for Jar {
             match zip::DateTime::try_from(epoch) {
                 Err(err) => {
                     warn!("Cannot convert epoch {} to zip::DateTime: {}", epoch, err);
-                },
+                }
                 Ok(dos_epoch) => {
-                    let ts : [u8; 4] = [
+                    let ts: [u8; 4] = [
                         (dos_epoch.timepart() & 0xFF).try_into().unwrap(),
                         (dos_epoch.timepart() >> 8).try_into().unwrap(),
                         (dos_epoch.datepart() & 0xFF).try_into().unwrap(),
@@ -72,7 +75,8 @@ impl super::Processor for Jar {
 
                     // Open output again to adjust timestamps
                     let output_path = io.output_path.as_ref().unwrap();
-                    let mut output = zip::ZipArchive::new(BufReader::new(File::open(output_path)?))?;
+                    let mut output =
+                        zip::ZipArchive::new(BufReader::new(File::open(output_path)?))?;
 
                     let overwrite = io.output.as_mut().unwrap();
 
@@ -81,22 +85,27 @@ impl super::Processor for Jar {
 
                         match file.last_modified().to_time() {
                             Err(e) => {
-                                warn!("{}: component {}: {}",
-                                      input_path.display(),
-                                      file.name(),
-                                      e);
-                            },
+                                warn!("{}: component {}: {}", input_path.display(), file.name(), e);
+                            }
                             Ok(mtime) => {
-                                info!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, epoch,
-                                      mtime > epoch);
+                                info!(
+                                    "File {}: {}\n  {:?} {:?} {}",
+                                    i,
+                                    file.name(),
+                                    mtime,
+                                    epoch,
+                                    mtime > epoch
+                                );
 
                                 if mtime > epoch {
                                     let header_offset = file.header_start();
 
-                                    debug!("{}: {}: seeking to 0x{:08x} (local file header)",
-                                           io.output_path.as_ref().unwrap().display(),
-                                           file.name(),
-                                           header_offset);
+                                    debug!(
+                                        "{}: {}: seeking to 0x{:08x} (local file header)",
+                                        io.output_path.as_ref().unwrap().display(),
+                                        file.name(),
+                                        header_offset
+                                    );
 
                                     overwrite.seek(SeekFrom::Start(header_offset))?;
                                     let mut buf = [0; 10];
@@ -108,10 +117,12 @@ impl super::Processor for Jar {
 
                                     let header_offset = file.central_header_start();
 
-                                    debug!("{}: {}: seeking to 0x{:08x} (central file header)",
-                                           io.output_path.as_ref().unwrap().display(),
-                                           file.name(),
-                                           header_offset);
+                                    debug!(
+                                        "{}: {}: seeking to 0x{:08x} (central file header)",
+                                        io.output_path.as_ref().unwrap().display(),
+                                        file.name(),
+                                        header_offset
+                                    );
 
                                     overwrite.seek(SeekFrom::Start(header_offset))?;
                                     let mut buf = [0; 12];
@@ -123,10 +134,10 @@ impl super::Processor for Jar {
 
                                     have_mod = true;
                                 }
-                            },
+                            }
                         }
                     }
-                },
+                }
             }
         }
 

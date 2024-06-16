@@ -10,9 +10,7 @@ pub struct SimpleLog {
 impl SimpleLog {
     /// Create new kernel logger with error level filter
     pub fn with_level(level: log::LevelFilter) -> SimpleLog {
-        SimpleLog {
-            maxlevel: level,
-        }
+        SimpleLog { maxlevel: level }
     }
 }
 

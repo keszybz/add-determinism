@@ -5,17 +5,17 @@ pub mod jar;
 pub mod javadoc;
 pub mod pyc;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, Metadata};
 use std::io;
 use std::io::Seek;
-use std::path::{Path, PathBuf};
 use std::os::linux::fs::MetadataExt as _;
-use std::os::unix::fs::MetadataExt as _;
 use std::os::unix::fs as unix_fs;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::options;
@@ -35,7 +35,6 @@ pub trait Processor {
     fn process(&self, path: &Path) -> Result<bool>;
 }
 
-
 // pub state: Option<Box<dyn ProcessorState>>,
 
 // pub trait ProcessorState {}
@@ -43,16 +42,14 @@ pub trait Processor {
 pub type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
 
 pub const HANDLERS: &[(&str, HandlerBoxed)] = &[
-    ("ar",      ar::Ar::boxed),
-    ("jar",     jar::Jar::boxed),
+    ("ar", ar::Ar::boxed),
+    ("jar", jar::Jar::boxed),
     ("javadoc", javadoc::Javadoc::boxed),
-    ("pyc",     pyc::Pyc::boxed),
+    ("pyc", pyc::Pyc::boxed),
 ];
 
 pub fn handler_names() -> Vec<&'static str> {
-    HANDLERS.iter()
-        .map(|(name, _)| *name)
-        .collect()
+    HANDLERS.iter().map(|(name, _)| *name).collect()
 }
 
 pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Processor>>> {
@@ -68,11 +65,11 @@ pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Process
                         return Err(e);
                     }
                     warn!("Handler {} skipped: {}", handler.name(), e);
-                },
+                }
                 Ok(()) => {
                     debug!("Initialized handler {}.", handler.name());
                     handlers.push(handler);
-                },
+                }
             }
         }
     }
@@ -92,15 +89,10 @@ pub fn do_normal_work(config: options::Config) -> Result<u64> {
     let mut n_paths = 0;
 
     for input_path in &config.inputs {
-        match process_file_or_dir(
-            &handlers,
-            &mut inodes_seen,
-            input_path,
-            None)
-        {
+        match process_file_or_dir(&handlers, &mut inodes_seen, input_path, None) {
             Err(err) => {
                 warn!("{}: failed to process: {}", input_path.display(), err);
-            },
+            }
             Ok(num) => {
                 n_paths += num;
             }
@@ -118,7 +110,6 @@ fn process_file(
     input_path: &Path,
     process_wrapper: ProcessWrapper,
 ) -> Result<bool> {
-
     // When processing locally, this says whether modifications have
     // been made. When processing remotely, it just says whether we
     // requested some processing.
@@ -131,13 +122,21 @@ fn process_file(
         // with different extensions. Thus, we check if the
         // given processor already handled this file.
         if *already_seen & (1 << n_processor) > 0 {
-            debug!("{}: already seen by {} handler",
-                   input_path.display(), processor.name());
+            debug!(
+                "{}: already seen by {} handler",
+                input_path.display(),
+                processor.name()
+            );
             continue;
         }
 
         let cond = processor.filter(input_path)?;
-        debug!("{}: handler {}: {}", input_path.display(), processor.name(), cond);
+        debug!(
+            "{}: handler {}: {}",
+            input_path.display(),
+            processor.name(),
+            cond
+        );
 
         if cond {
             selected_handlers |= 1 << n_processor;
@@ -146,13 +145,12 @@ fn process_file(
                 match processor.process(input_path) {
                     Err(err) => {
                         warn!("{}: failed to process: {}", input_path.display(), err);
-                    },
-                    Ok(false) => {},
+                    }
+                    Ok(false) => {}
                     Ok(true) => {
                         entry_mod = true;
-                    },
+                    }
                 }
-
             }
         }
 
@@ -175,7 +173,6 @@ pub fn process_file_or_dir(
     input_path: &Path,
     process_wrapper: ProcessWrapper,
 ) -> Result<u64> {
-
     let mut first = true; // WalkDir doesn't allow handling the original argument
                           // differently from any subdirectories, but we want to return
                           // an error if the specified path is missing or inaccessible,
@@ -185,53 +182,50 @@ pub fn process_file_or_dir(
 
     for entry in walkdir::WalkDir::new(input_path)
         .follow_links(false)
-        .into_iter() {
-            let entry = match entry {
-                Err(e) => {
-                    if first {
-                        return Err(anyhow!("Cannot open path: {}", e));
-                    } else {
-                        warn!("Cannot open path: {}", e);
-                        continue;
-                    }
-                },
-                Ok(entry) => entry,
-            };
-
-            first = false;
-
-            debug!("Looking at {}…", entry.path().display());
-
-            let metadata = entry.metadata()?;
-            if !metadata.is_file() {
-                debug!("{}: not a file", entry.path().display());
-                continue;
-            }
-
-            let inode = metadata.ino();
-            let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
-
-            let entry_mod = process_file(
-                handlers,
-                &mut already_seen,
-                entry.path(),
-                process_wrapper)?;
-
-            inodes_seen.insert(inode, already_seen); // This is the orig inode
-            if entry_mod {
-                modifications += 1;
-
-                // The path might have been replaced with a new inode.
-                let metadata = entry.metadata()?;
-                let inode2 = metadata.ino();
-                if inode2 != inode {
-                    // This is the new inode. We use the same set of bits in
-                    // already_seen, because those handlers have already been
-                    // applied to the contents of the new inode.
-                    inodes_seen.insert(inode2, already_seen);
+        .into_iter()
+    {
+        let entry = match entry {
+            Err(e) => {
+                if first {
+                    return Err(anyhow!("Cannot open path: {}", e));
+                } else {
+                    warn!("Cannot open path: {}", e);
+                    continue;
                 }
             }
+            Ok(entry) => entry,
+        };
+
+        first = false;
+
+        debug!("Looking at {}…", entry.path().display());
+
+        let metadata = entry.metadata()?;
+        if !metadata.is_file() {
+            debug!("{}: not a file", entry.path().display());
+            continue;
         }
+
+        let inode = metadata.ino();
+        let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
+
+        let entry_mod = process_file(handlers, &mut already_seen, entry.path(), process_wrapper)?;
+
+        inodes_seen.insert(inode, already_seen); // This is the orig inode
+        if entry_mod {
+            modifications += 1;
+
+            // The path might have been replaced with a new inode.
+            let metadata = entry.metadata()?;
+            let inode2 = metadata.ino();
+            if inode2 != inode {
+                // This is the new inode. We use the same set of bits in
+                // already_seen, because those handlers have already been
+                // applied to the contents of the new inode.
+                inodes_seen.insert(inode2, already_seen);
+            }
+        }
+    }
 
     Ok(modifications)
 }
@@ -246,9 +240,8 @@ pub struct InputOutputHelper<'a> {
 
 impl<'a> InputOutputHelper<'a> {
     pub fn open(input_path: &'a Path) -> Result<(Self, File)> {
-
-        let input = File::open(input_path)
-            .with_context(|| format!("Cannot open {:?}", input_path))?;
+        let input =
+            File::open(input_path).with_context(|| format!("Cannot open {:?}", input_path))?;
         // I tried using BufReader, but it returns short reads occasionally.
 
         let input_metadata = input.metadata()?;
@@ -274,7 +267,9 @@ impl<'a> InputOutputHelper<'a> {
             }
         };
 
-        let output_path = self.input_path.with_file_name(format!(".#.{}.tmp", input_file_name));
+        let output_path = self
+            .input_path
+            .with_file_name(format!(".#.{}.tmp", input_file_name));
 
         let mut openopts = File::options();
         openopts.read(true).write(true).create_new(true);
@@ -283,10 +278,17 @@ impl<'a> InputOutputHelper<'a> {
             Ok(some) => some,
             Err(e) => {
                 if e.kind() != io::ErrorKind::AlreadyExists {
-                    return Err(anyhow!("{}: cannot open temporary file: {}", output_path.display(), e));
+                    return Err(anyhow!(
+                        "{}: cannot open temporary file: {}",
+                        output_path.display(),
+                        e
+                    ));
                 }
 
-                debug!("{}: stale temporary file found, removing", output_path.display());
+                debug!(
+                    "{}: stale temporary file found, removing",
+                    output_path.display()
+                );
                 fs::remove_file(&output_path)?;
                 openopts.open(&output_path)?
             }
@@ -313,9 +315,13 @@ impl<'a> InputOutputHelper<'a> {
                         if e.kind() == io::ErrorKind::NotFound {
                             return Ok(false); // no modifications and nothing to do
                         } else {
-                            return Err(anyhow!("{}: cannot reopen temporary file: {}", output_path.display(), e));
+                            return Err(anyhow!(
+                                "{}: cannot reopen temporary file: {}",
+                                output_path.display(),
+                                e
+                            ));
                         }
-                    },
+                    }
                 };
                 output = fallback_output.as_mut();
             }
@@ -328,22 +334,37 @@ impl<'a> InputOutputHelper<'a> {
                 output.set_permissions(meta.permissions())?;
                 output.set_modified(meta.modified()?)?;
 
-                if let Err(e) = unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
+                if let Err(e) =
+                    unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid()))
+                {
                     if e.kind() == io::ErrorKind::PermissionDenied {
-                        warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
+                        warn!(
+                            "{}: cannot change file ownership, ignoring",
+                            self.input_path.display()
+                        );
                     } else {
-                        return Err(anyhow!("{}: cannot change file ownership: {}", self.input_path.display(), e));
+                        return Err(anyhow!(
+                            "{}: cannot change file ownership: {}",
+                            self.input_path.display(),
+                            e
+                        ));
                     }
                 }
 
-                info!("{}: replacing with normalized version", self.input_path.display());
+                info!(
+                    "{}: replacing with normalized version",
+                    self.input_path.display()
+                );
                 fs::rename(output_path, self.input_path)?;
             } else {
                 output.seek(io::SeekFrom::Start(0))?;
 
                 let mut input_writer = File::options().write(true).open(self.input_path)?;
 
-                info!("{}: rewriting with normalized contents", self.input_path.display());
+                info!(
+                    "{}: rewriting with normalized contents",
+                    self.input_path.display()
+                );
                 io::copy(output, &mut input_writer)?;
 
                 debug!("{}: unlinking", output_path.display());
@@ -355,7 +376,6 @@ impl<'a> InputOutputHelper<'a> {
 
                 input_writer.set_modified(meta.modified()?)?;
             }
-
         } else if let Some(output_path) = &self.output_path {
             debug!("{}: discarding modified version", self.input_path.display());
             fs::remove_file(output_path)?;

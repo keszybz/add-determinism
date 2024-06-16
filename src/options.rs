@@ -1,18 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use chrono::{TimeZone, Utc};
 use clap::Parser;
-use chrono::{Utc, TimeZone};
 use log::{debug, info, LevelFilter};
 use std::env;
-use std::path::PathBuf;
 use std::os::fd::RawFd;
+use std::path::PathBuf;
 
-use crate::simplelog;
 use crate::handlers;
+use crate::simplelog;
 
-#[derive(Debug)]
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Options {
     /// Paths to operate on
@@ -34,11 +33,13 @@ struct Options {
 
     /// Read paths to process from this socket.
     /// When used, an explicit list of handlers must be given.
-    #[arg(long,
-          hide = true,
-          conflicts_with = "inputs",
-          conflicts_with = "jobs",
-          requires = "handlers")]
+    #[arg(
+        long,
+        hide = true,
+        conflicts_with = "inputs",
+        conflicts_with = "jobs",
+        requires = "handlers"
+    )]
     pub socket: Option<RawFd>,
 
     /// Use N worker processes
@@ -81,10 +82,9 @@ fn filter_by_name(name: &str, filter: &[&str]) -> bool {
 }
 
 pub fn requested_handlers(filter: &[&str]) -> Result<(Vec<&'static str>, bool)> {
-    if filter.iter().any(|x|  x.starts_with('-')) &&
-       filter.iter().any(|x| !x.starts_with('-')) {
-            return Err(anyhow!("Cannot mix --handler options with '-' and without"));
-        }
+    if filter.iter().any(|x| x.starts_with('-')) && filter.iter().any(|x| !x.starts_with('-')) {
+        return Err(anyhow!("Cannot mix --handler options with '-' and without"));
+    }
 
     if let Some(name) = filter
         .iter()
@@ -101,11 +101,17 @@ pub fn requested_handlers(filter: &[&str]) -> Result<(Vec<&'static str>, bool)> 
         .collect();
 
     if list.is_empty() {
-        return Err(anyhow!("Requested handler list is empty, will have nothing to do"));
+        return Err(anyhow!(
+            "Requested handler list is empty, will have nothing to do"
+        ));
     }
 
     let strict = !filter.is_empty();
-    debug!("Requested handlers: {} (strict={})", list.join(", "), strict);
+    debug!(
+        "Requested handlers: {} (strict={})",
+        list.join(", "),
+        strict
+    );
     Ok((list, strict))
 }
 
@@ -115,7 +121,11 @@ impl Config {
 
         // log level
 
-        let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
+        let log_level = if options.verbose {
+            LevelFilter::Debug
+        } else {
+            LevelFilter::Info
+        };
         simplelog::init_with_level(log_level)?;
 
         // handlers
@@ -145,10 +155,12 @@ impl Config {
         match source_date_epoch {
             None => debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)"),
             Some(v) => {
-                debug!("SOURCE_DATE_EPOCH timestamp: {} ({})",
-                       v,
-                       Utc.timestamp_opt(v, 0).unwrap());
-            },
+                debug!(
+                    "SOURCE_DATE_EPOCH timestamp: {} ({})",
+                    v,
+                    Utc.timestamp_opt(v, 0).unwrap()
+                );
+            }
         }
 
         Ok(Some(Self {

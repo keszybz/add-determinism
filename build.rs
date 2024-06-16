@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use std::io::Write;
 use anyhow::Result;
+use std::io::Write;
 
 fn main() -> Result<()> {
     let out_dir = std::env::var("OUT_DIR")?;
@@ -9,14 +9,16 @@ fn main() -> Result<()> {
     let mut f = std::fs::File::create(dest)?;
 
     for (num, entry) in glob::glob("tests/cases/python_stdlib/*/*.pyc")?.enumerate() {
-        write!(f, "
+        write!(
+            f,
+            "
 #[test]
 fn test_python_stdlib_{}() {{
     test_python_stdlib_file(\"{}\");
 }}
 ",
-               num,
-               entry?.display(),
+            num,
+            entry?.display(),
         )?;
     }
     Ok(())

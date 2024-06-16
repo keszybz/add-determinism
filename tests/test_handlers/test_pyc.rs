@@ -8,7 +8,7 @@ use std::path::Path;
 
 use add_determinism::handlers::pyc;
 
-use super::{prepare_dir, make_handler};
+use super::{make_handler, prepare_dir};
 
 #[test]
 fn test_pyc_python_version() {
@@ -82,7 +82,6 @@ fn test_adapters_opt_1() {
     assert_ne!(orig.st_ino(), new.st_ino());
 }
 
-
 #[test]
 fn test_testrelro_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312~fixed.pyc").unwrap();
@@ -114,14 +113,16 @@ fn test_python_stdlib_file(input_pyc: &str) {
     assert_eq!(pyc.process(&*input).unwrap(), have_mod);
 
     let mut data_expected = vec![];
-    File::open(
-        if have_mod { &fixed_pyc } else { input_pyc }
-    ).unwrap()
-        .read_to_end(&mut data_expected).unwrap();
+    File::open(if have_mod { &fixed_pyc } else { input_pyc })
+        .unwrap()
+        .read_to_end(&mut data_expected)
+        .unwrap();
 
     let mut data_output: Vec<u8> = vec![];
-    File::open(&*input).unwrap()
-        .read_to_end(&mut data_output).unwrap();
+    File::open(&*input)
+        .unwrap()
+        .read_to_end(&mut data_output)
+        .unwrap();
 
     assert_eq!(data_output, data_expected);
 }
