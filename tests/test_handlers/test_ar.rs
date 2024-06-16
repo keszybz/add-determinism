@@ -7,7 +7,7 @@ use std::rc::Rc;
 use add_determinism::options;
 use add_determinism::handlers::ar;
 
-use super::{prepare_dir, make_handler};
+use super::{prepare_dir, make_handler, test_corpus_file};
 
 #[test]
 fn test_libempty() {
@@ -101,4 +101,16 @@ fn test_testrelro_fixed() {
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
     assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_eq!(orig.st_ino(), new.st_ino());
+}
+
+#[test]
+fn test_libhsbase_compat_batteries() {
+    // This is a test for buffered reads. When BufReader<File> is used,
+    // we get unexpected short reads.
+    // See https://github.com/keszybz/add-determinism/pull/14.
+
+    let filename = "tests/cases/libHSbase-compat-batteries-0.12.3-EvvecFThiaEAGWq5U5Tpi9.a";
+
+    let ar = make_handler(1717842014, ar::Ar::boxed).unwrap();
+    test_corpus_file(ar, filename);
 }
