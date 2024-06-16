@@ -75,8 +75,9 @@ and `<meta name="dc.created" content="<date>">` is replaced by a version with `$
 
 Accepts `*.pyc`.
 
-Uses the [MarshalParser Python module](https://github.com/fedora-python/marshalparser)
-to clean up the internal Python object serialization in cache files.
+This handler implements a `.pyc` file parser and cleans up ununsed "flag references".
+It is a native reimplementation of
+the [MarshalParser Python module](https://github.com/fedora-python/marshalparser).
 
 ## Notes
 
