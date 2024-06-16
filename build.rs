@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use std::io::Write;
 use anyhow::Result;
+use std::io::{BufWriter, Write};
 
 fn main() -> Result<()> {
     let out_dir = std::env::var("OUT_DIR")?;
     let dest = std::path::Path::new(&out_dir).join("test_python_stdlib_cases.rs");
-    let mut f = std::fs::File::create(dest)?;
+    let mut f = std::fs::File::create(dest).map(BufWriter::new)?;
 
     for (num, entry) in glob::glob("tests/cases/python_stdlib/*/*.pyc")?.enumerate() {
         write!(f, "
