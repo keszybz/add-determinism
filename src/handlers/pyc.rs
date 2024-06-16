@@ -2,7 +2,6 @@
 
 use anyhow::{anyhow, Result};
 use log::debug;
-use std::fs::File;
 use std::io::{Read, Write};
 use std::iter;
 use std::path::{Path, PathBuf};
@@ -366,7 +365,7 @@ pub struct PycParser {
 }
 
 impl PycParser {
-    pub fn from_file(input_path: &Path, mut input: File) -> Result<Self> {
+    pub fn from_file(input_path: &Path, mut input: impl Read) -> Result<Self> {
         let mut buf = [0; 4];
         input.read_exact(&mut buf)?;
 

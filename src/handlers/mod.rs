@@ -10,7 +10,7 @@ use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, Metadata};
-use std::io;
+use std::io::{self, BufReader};
 use std::io::Seek;
 use std::os::linux::fs::MetadataExt as _;
 use std::os::unix::fs as unix_fs;
@@ -243,13 +243,13 @@ pub struct InputOutputHelper<'a> {
 }
 
 impl<'a> InputOutputHelper<'a> {
-    pub fn open(input_path: &'a Path) -> Result<(Self, File)> {
+    pub fn open(input_path: &'a Path) -> Result<(Self, BufReader<File>)> {
 
         let input = File::open(input_path)
             .with_context(|| format!("Cannot open {:?}", input_path))?;
-        // I tried using BufReader, but it returns short reads occasionally.
 
         let input_metadata = input.metadata()?;
+        let input = BufReader::new(input);
 
         let io = InputOutputHelper {
             input_path,

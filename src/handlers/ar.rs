@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, Context, anyhow};
 use log::debug;
 use std::io::{BufWriter, Read, Seek, Write};
 use std::path::Path;
@@ -22,6 +22,17 @@ impl Ar {
     pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
         Box::new(Self { config: config.clone() })
     }
+}
+
+// Like `read_exact`, but EOF is not an error.
+fn read_exact_or_zero(mut r: impl Read, buf: &mut [u8]) -> Result<bool> {
+    // End of stream is OK, we return an empty buffer
+    let n = r.read(buf)?;
+    if n == 0 {
+        return Ok(false);
+    }
+    r.read_exact(&mut buf[n..])?;
+    Ok(true)
 }
 
 impl super::Processor for Ar {
@@ -55,13 +66,10 @@ impl super::Processor for Ar {
 
             debug!("{ipath}: reading file header at offset {pos}");
 
-            match input.read(&mut buf)? {
-                0 => break,
-                FILE_HEADER_LENGTH => {},
-                n => {
-                    return Err(anyhow!("{}: short read of {} bytes at offset {}",
-                                       io.input_path.display(), n, pos));
-                }
+            if !read_exact_or_zero(&mut input, &mut buf)
+                .with_context(|| anyhow!("{}: short read at offset {}",
+                                         io.input_path.display(), pos))? {
+                break
             }
 
             // https://en.wikipedia.org/wiki/Ar_(Unix)
