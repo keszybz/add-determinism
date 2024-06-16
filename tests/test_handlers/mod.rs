@@ -4,9 +4,10 @@ mod test_pyc;
 
 use anyhow::Result;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use tempfile::TempDir;
 use std::rc::Rc;
+use tempfile::TempDir;
 
 use add_determinism::options;
 use add_determinism::handlers;
@@ -94,4 +95,28 @@ fn test_inode_map_2() {
 
     // The inode changes because we rewrite the file
     assert_eq!(cache.len(), 2);
+}
+
+fn test_corpus_file(handler: Box<dyn handlers::Processor>, filename: &str) {
+    let filename = Path::new(filename);
+    let (_dir, input) = prepare_dir(filename.to_str().unwrap()).unwrap();
+
+    let ext = filename.extension().unwrap().to_str().unwrap().to_owned();
+    let fixed = filename.with_extension(ext + ".fixed");
+    let have_mod = fixed.exists();
+
+    assert!(handler.filter(&*input).unwrap());
+    assert_eq!(handler.process(&*input).unwrap(), have_mod);
+
+    let mut data_expected = vec![];
+    fs::File::open(
+        if have_mod { &fixed } else { filename }
+    ).unwrap()
+        .read_to_end(&mut data_expected).unwrap();
+
+    let mut data_output: Vec<u8> = vec![];
+    fs::File::open(&*input).unwrap()
+        .read_to_end(&mut data_output).unwrap();
+
+    assert_eq!(data_output, data_expected);
 }
