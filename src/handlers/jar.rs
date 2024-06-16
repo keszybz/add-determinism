@@ -67,8 +67,8 @@ impl super::Processor for Jar {
                         (dos_epoch.datepart() >> 8).try_into().unwrap(),
                     ];
 
-                    debug!("Epoch converted to zip::DateTime: {:?}", dos_epoch);
-                    debug!("Epoch as buffer: {:?}", ts);
+                    debug!("Epoch converted to zip::DateTime: {dos_epoch:?}");
+                    debug!("Epoch as buffer: {ts:?}");
 
                     // Open output again to adjust timestamps
                     let output_path = io.output_path.as_ref().unwrap();

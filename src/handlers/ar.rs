@@ -48,11 +48,12 @@ impl super::Processor for Ar {
 
         output.write_all(&buf)?;
 
+        let ipath = io.input_path.display();
         loop {
             let pos = input.stream_position()?;
             let mut buf = [0; FILE_HEADER_LENGTH];
 
-            debug!("{}: reading file header at offset {}", io.input_path.display(), pos);
+            debug!("{ipath}: reading file header at offset {pos}");
 
             match input.read(&mut buf)? {
                 0 => break,

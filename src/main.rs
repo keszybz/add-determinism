@@ -16,7 +16,7 @@ fn brp_check(config: &options::Config) -> Result<()> {
 
     let arg0 = env::args().next().unwrap();
 
-    debug!("Running as {}… (brp={})", arg0, if config.brp { "true" } else { "false" });
+    debug!("Running as {arg0}… (brp={})", if config.brp { "true" } else { "false" });
 
     if config.brp {
         let build_root = env::var("RPM_BUILD_ROOT")

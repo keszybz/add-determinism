@@ -216,7 +216,7 @@ pub fn do_worker_work(config: options::Config) -> Result<()> {
             panic!("Empty input path");
         }
 
-        debug!("Will process {:?} (selected_handlers={})", input, selected_handlers);
+        debug!("Will process {input:?} (selected_handlers={selected_handlers})");
         let input_path = PathBuf::from(input);
 
         if let Err(e) =
