@@ -5,7 +5,8 @@
 %__brp_add_determinism /usr/bin/add-determinism
 
 # Extra options to be passed to the program.
-# For example, --handler=-pyc can be used to disable the pyc file handler.
+# For example, '--handler=-pyc' can be used to disable the pyc file handler,
+# and '-v' can be added to increase verbosity.
 %add_determinism_options %{nil}
 
 # Directories (or files) to process.
