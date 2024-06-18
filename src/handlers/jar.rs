@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::Result;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -87,8 +87,8 @@ impl super::Processor for Jar {
                                       e);
                             }
                             Ok(mtime) => {
-                                info!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, epoch,
-                                      mtime > epoch);
+                                debug!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, epoch,
+                                       mtime > epoch);
 
                                 if mtime > epoch {
                                     let header_offset = file.header_start();
