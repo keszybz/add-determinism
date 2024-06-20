@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::{anyhow, Result};
-use log::debug;
+use log::{debug, info};
 use regex::{Regex, RegexBuilder};
+use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::rc::Rc;
@@ -98,9 +99,14 @@ impl super::Processor for Javadoc {
         for line in input.lines() {
             let line = match line {
                 Err(e) => {
-                    return Err(anyhow!("{}: failed to read line: {}", input_path.display(), e));
+                    if e.kind() == io::ErrorKind::InvalidData {
+                        info!("{}:{}: {}, ignoring.", input_path.display(), num + 1, e);
+                        return Ok(false);
+                    } else {
+                        return Err(anyhow!("{}: failed to read line: {}", input_path.display(), e));
+                    }
                 }
-                Ok(line) => line,
+                Ok(line) => line
             };
 
             num += 1;
