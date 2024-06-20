@@ -235,11 +235,24 @@ pub fn process_file_or_dir(
 }
 
 pub struct InputOutputHelper<'a> {
-    input_path: &'a Path,
-    input_metadata: Metadata,
+    pub input_path: &'a Path,
+    pub input_metadata: Metadata,
 
-    output_path: Option<PathBuf>,
-    output: Option<File>,
+    pub output_path: Option<PathBuf>,
+    pub output: Option<File>,
+}
+
+impl<'a> Drop for InputOutputHelper<'a> {
+    fn drop(&mut self) {
+        if let Some(output_path) = self.output_path.take() {
+            debug!("{}: discarding temporary copy", output_path.display());
+            if let Err(e) = fs::remove_file(output_path) {
+                if e.kind() != io::ErrorKind::NotFound {
+                    warn!("Failed to remove {}: {}", self.input_path.display(), e);
+                }
+            }
+        }
+    }
 }
 
 impl<'a> InputOutputHelper<'a> {
@@ -336,6 +349,8 @@ impl<'a> InputOutputHelper<'a> {
 
                 info!("{}: replacing with normalized version", self.input_path.display());
                 fs::rename(output_path, self.input_path)?;
+                self.output_path = None; /* The path is now invalid */
+
             } else {
                 output.seek(io::SeekFrom::Start(0))?;
 
@@ -344,19 +359,9 @@ impl<'a> InputOutputHelper<'a> {
                 info!("{}: rewriting with normalized contents", self.input_path.display());
                 io::copy(output, &mut input_writer)?;
 
-                debug!("{}: unlinking", output_path.display());
-                if let Err(e) = fs::remove_file(output_path) {
-                    if e.kind() != io::ErrorKind::NotFound {
-                        warn!("Failed to remove {}: {}", self.input_path.display(), e);
-                    }
-                }
-
                 input_writer.set_modified(meta.modified()?)?;
             }
 
-        } else if let Some(output_path) = &self.output_path {
-            debug!("{}: discarding modified version", self.input_path.display());
-            fs::remove_file(output_path)?;
         }
 
         Ok(have_mod)

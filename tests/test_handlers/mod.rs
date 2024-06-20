@@ -52,6 +52,20 @@ impl handlers::Processor for Trivial {
 }
 
 #[test]
+fn test_input_output_helper_drop() {
+    let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
+
+    let (mut helper, _) = handlers::InputOutputHelper::open(&*input).unwrap();
+    helper.open_output().unwrap();
+
+    let output_path = helper.output_path.as_ref().unwrap().clone();
+
+    assert!(output_path.exists());
+    drop(helper);
+    assert!(!output_path.exists());
+}
+
+#[test]
 fn test_inode_map() {
     let (dir, _input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
