@@ -120,7 +120,14 @@ impl super::Processor for Javadoc {
 
             if !after_header && (num >= HEADER_LINES_TO_CHECK || head_end_re.find(&line).is_some()) {
                 if !have_mod {
-                    debug!("{}:{}: found nothing to replace until header end", input_path.display(), num);
+                    let why = if num >= HEADER_LINES_TO_CHECK {
+                        format!("first {HEADER_LINES_TO_CHECK} lines")
+                    } else {
+                        String::from("until header end")
+                    };
+
+                    debug!("{}:{}: found nothing to replace {}", input_path.display(), num, why);
+                    return Ok(false);
                 }
 
                 after_header = true;
