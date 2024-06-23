@@ -3,6 +3,7 @@
 use anyhow::{bail, Result};
 use log::{debug, warn};
 use nix::{fcntl, sys, unistd};
+use serde::{Serialize, Deserialize};
 use std::env;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::net::UnixDatagram;
@@ -19,6 +20,12 @@ pub struct Controller {
     handlers: Vec<Box<dyn handlers::Processor>>,
     sockets: (OwnedFd, OwnedFd),
     workers: Vec<process::Child>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Job {
+    selected_handlers: u8,
+    input_path: PathBuf,
 }
 
 impl Controller {
@@ -81,7 +88,7 @@ impl Controller {
         })
     }
 
-    pub fn send_path(
+    pub fn send_job(
         &self,
         selected_handlers: u8,
         input_path: &Path,
@@ -89,11 +96,10 @@ impl Controller {
 
         assert!(selected_handlers > 0);
 
-        let arg = input_path.to_str().unwrap().as_bytes();
-        let mut buf = vec![selected_handlers];
-        buf.extend(arg);
+        let job = Job { selected_handlers, input_path: input_path.to_path_buf() };
+        let buf = serde_cbor::ser::to_vec_packed(&job)?;
 
-        debug!("Sending {} (handlers=0x{:x})", input_path.display(), selected_handlers);
+        debug!("Sending {:?}", &job);
         unistd::write(&self.sockets.1, &buf)?;
 
         Ok(())
@@ -138,7 +144,7 @@ impl Controller {
                 &control.handlers,
                 &mut inodes_seen,
                 input_path,
-                Some(&|selected_handlers, input_path| control.send_path(selected_handlers, input_path)))
+                Some(&|selected_handlers, input_path| control.send_job(selected_handlers, input_path)))
             {
                 Err(err) => {
                     warn!("{}: failed to process: {}", input_path.display(), err);
@@ -210,20 +216,13 @@ pub fn do_worker_work(config: options::Config) -> Result<()> {
             return Ok(());
         }
 
-        let selected_handlers = buf[0];
-        let input = str::from_utf8(&buf[1..n])?;
-
-        if input.is_empty() {
-            panic!("Empty input path");
-        }
-
-        debug!("Will process {input:?} (selected_handlers={selected_handlers})");
-        let input_path = PathBuf::from(input);
+        let job: Job = serde_cbor::de::from_mut_slice(&mut buf[..n])?;
+        debug!("Got job {:?}", job);
 
         if let Err(e) =
-            process_file_with_selected_handlers(&handlers, selected_handlers, &input_path)
+            process_file_with_selected_handlers(&handlers, job.selected_handlers, &job.input_path)
         {
-            warn!("{}: failed to process: {}", input_path.display(), e);
+            warn!("{}: failed to process: {}", job.input_path.display(), e);
         }
     }
 }
