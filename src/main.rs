@@ -54,8 +54,8 @@ fn main() -> Result<()> {
 
     let stats;
 
-    if let Some(socket) = config.socket {
-        debug!("Running as worker on socket {}", socket);
+    if let Some(socket) = config.job_socket {
+        debug!("Running as worker on job socket {}", socket);
         return multiprocess::do_worker_work(config);
 
     } else if let Some(jobs) = config.jobs {

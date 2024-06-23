@@ -7,6 +7,7 @@ pub mod pyc;
 
 use anyhow::{bail, Context, Result};
 use log::{debug, info, warn};
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, Metadata};
@@ -20,7 +21,7 @@ use std::rc::Rc;
 
 use crate::options;
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ProcessResult {
     Noop,
     Replaced,
@@ -60,7 +61,7 @@ pub trait Processor {
     fn process(&self, path: &Path) -> Result<ProcessResult>;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Stats {
     /// Count of directories that were scanned. This includes both
     /// command-line arguments and subdirectories found in recursive
@@ -93,6 +94,12 @@ impl Stats {
             inodes_replaced: 0,
             inodes_rewritten: 0,
         }
+    }
+
+    pub fn add_one(&mut self, selected_handlers: u8, result: ProcessResult) {
+        self.inodes_processed += (selected_handlers > 0) as u64;
+        self.inodes_replaced += (result == ProcessResult::Replaced) as u64;
+        self.inodes_rewritten += (result == ProcessResult::Rewritten) as u64;
     }
 
     pub fn add(&mut self, other: &Stats) {
@@ -194,8 +201,8 @@ fn process_file(
 ) -> Result<ProcessResult> {
 
     // When processing locally, this says whether modifications have
-    // been made. When processing remotely, it just says whether we
-    // requested some processing.
+    // been made. When processing remotely, we will send the result
+    // separately after asynchronous processing is finished.
     let mut entry_mod = ProcessResult::Noop;
 
     let mut selected_handlers = 0;
@@ -225,18 +232,15 @@ fn process_file(
         *already_seen |= selected_handlers;
     }
 
-    if let Some(wrapper) = process_wrapper {
+    if let Some(func) = process_wrapper {
         if selected_handlers > 0 {
-            wrapper(selected_handlers, input_path)?;
-            // FIXME
-            entry_mod = ProcessResult::Replaced;
+            func(selected_handlers, input_path)?;
         }
+
+        assert!(entry_mod == ProcessResult::Noop);
     }
 
-    stats.inodes_processed += (selected_handlers > 0) as u64;
-    stats.inodes_replaced += (entry_mod == ProcessResult::Replaced) as u64;
-    stats.inodes_rewritten += (entry_mod == ProcessResult::Rewritten) as u64;
-
+    stats.add_one(selected_handlers, entry_mod);
     Ok(entry_mod)
 }
 

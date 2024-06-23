@@ -38,7 +38,14 @@ struct Options {
           conflicts_with = "inputs",
           conflicts_with = "jobs",
           requires = "handlers")]
-    pub socket: Option<RawFd>,
+    pub job_socket: Option<RawFd>,
+
+    /// Write results of processing to this socket.
+    /// When used, an explicit list of handlers must be given.
+    #[arg(long,
+          hide = true,
+          requires = "job_socket")]
+    pub result_socket: Option<RawFd>,
 
     /// Use N worker processes
     #[arg(short = 'j',
@@ -52,7 +59,8 @@ pub struct Config {
     pub inputs: Vec<PathBuf>,
     pub brp: bool,
     pub verbose: bool,
-    pub socket: Option<RawFd>,
+    pub job_socket: Option<RawFd>,
+    pub result_socket: Option<RawFd>,
     pub jobs: Option<u32>,
     pub source_date_epoch: Option<i64>,
     pub handler_names: Vec<&'static str>,
@@ -130,7 +138,7 @@ impl Config {
 
         // positional args
 
-        if options.socket.is_none() && options.inputs.is_empty() && !options.brp {
+        if options.job_socket.is_none() && options.inputs.is_empty() && !options.brp {
             info!("No arguments specified, nothing to do. 😎");
         }
 
@@ -154,7 +162,8 @@ impl Config {
             inputs: options.inputs,
             brp: options.brp,
             verbose: options.verbose,
-            socket: options.socket,
+            job_socket: options.job_socket,
+            result_socket: options.result_socket,
             jobs: options.jobs,
             source_date_epoch,
             handler_names,
@@ -169,7 +178,8 @@ impl Config {
             inputs: vec![],
             brp: false,
             verbose: false,
-            socket: None,
+            job_socket: None,
+            result_socket: None,
             jobs: None,
             source_date_epoch: Some(source_date_epoch),
             handler_names: vec![],

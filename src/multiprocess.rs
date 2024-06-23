@@ -2,7 +2,7 @@
 
 use anyhow::{bail, Result};
 use log::{debug, warn};
-use nix::{fcntl, sys, unistd};
+use nix::{errno, fcntl, sys, unistd};
 use serde::{Serialize, Deserialize};
 use std::env;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
@@ -18,7 +18,8 @@ use crate::options;
 
 pub struct Controller {
     handlers: Vec<Box<dyn handlers::Processor>>,
-    sockets: (OwnedFd, OwnedFd),
+    job_sockets: (OwnedFd, OwnedFd),
+    result_sockets: (OwnedFd, OwnedFd),
     workers: Vec<process::Child>,
 }
 
@@ -32,12 +33,14 @@ impl Controller {
     fn build_worker_command(
         config: &options::Config,
         handlers: &[Box<dyn handlers::Processor>],
-        fd: &RawFd,
+        job_fd: &RawFd,
+        result_fd: &RawFd,
     ) -> Result<process::Command> {
 
         let mut cmd = process::Command::new(env::current_exe()?);
 
-        cmd.arg("--socket").arg(fd.to_string());
+        cmd.arg("--job-socket").arg(job_fd.to_string());
+        cmd.arg("--result-socket").arg(result_fd.to_string());
         if config.brp {
             cmd.arg("--brp");
         }
@@ -61,17 +64,29 @@ impl Controller {
     pub fn create(config: &Rc<options::Config>) -> Result<Self> {
         let handlers = handlers::make_handlers(config)?;
 
-        let sockets = sys::socket::socketpair(
+        let job_sockets = sys::socket::socketpair(
+            sys::socket::AddressFamily::Unix,
+            sys::socket::SockType::Datagram,
+            None,
+            sys::socket::SockFlag::empty(),
+        )?;
+        let result_sockets = sys::socket::socketpair(
             sys::socket::AddressFamily::Unix,
             sys::socket::SockType::Datagram,
             None,
             sys::socket::SockFlag::empty(),
         )?;
 
-        fcntl::fcntl(sockets.1.as_raw_fd(), fcntl::F_SETFD(fcntl::FdFlag::FD_CLOEXEC))?;
+        fcntl::fcntl(job_sockets.1.as_raw_fd(), fcntl::F_SETFD(fcntl::FdFlag::FD_CLOEXEC))?;
+        fcntl::fcntl(result_sockets.1.as_raw_fd(), fcntl::F_SETFD(fcntl::FdFlag::FD_CLOEXEC))?;
+        fcntl::fcntl(result_sockets.1.as_raw_fd(), fcntl::F_SETFL(fcntl::OFlag::O_NONBLOCK))?;
 
-        let mut cmd = Self::build_worker_command(config, &handlers, &sockets.0.as_raw_fd())?;
-        // dbg!(&cmd);
+        let mut cmd = Self::build_worker_command(
+            config,
+            &handlers,
+            &job_sockets.0.as_raw_fd(),
+            &result_sockets.0.as_raw_fd(),
+        )?;
 
         let n = config.jobs.unwrap();
         let mut workers = vec![];
@@ -83,7 +98,8 @@ impl Controller {
 
         Ok(Controller {
             handlers,
-            sockets,
+            job_sockets,
+            result_sockets,
             workers,
         })
     }
@@ -100,7 +116,7 @@ impl Controller {
         let buf = serde_cbor::ser::to_vec_packed(&job)?;
 
         debug!("Sending {:?}", &job);
-        unistd::write(&self.sockets.1, &buf)?;
+        unistd::write(&self.job_sockets.1, &buf)?;
 
         Ok(())
     }
@@ -108,11 +124,11 @@ impl Controller {
     pub fn close(&mut self) -> Result<()> {
         debug!("Sending quit command to children…");
         for _ in &mut self.workers {
-            unistd::write(&self.sockets.1, b"")?;
+            unistd::write(&self.job_sockets.1, b"")?;
         }
 
         debug!("Closing control socket…");
-        unistd::close(self.sockets.1.as_raw_fd())?;
+        unistd::close(self.job_sockets.1.as_raw_fd())?;
 
         debug!("Waiting for children to exit…");
         for child in &mut self.workers {
@@ -128,6 +144,42 @@ impl Controller {
             }
         }
         debug!("Children are dead");
+        Ok(())
+    }
+
+    fn read_results(&mut self, total: &mut handlers::Stats) -> Result<()> {
+        debug!("Reading stats from children…");
+
+        let mut count = 0;
+        let mut buf = vec![0; 1024];
+
+        loop {
+            let n = match unistd::read(self.result_sockets.1.as_raw_fd(), &mut buf) {
+                Err(e) => {
+                    if e == errno::Errno::EAGAIN {
+                        break;
+                    } else {
+                        return Err(anyhow!("read failed: {}", e));
+                    }
+                }
+                Ok(n) => n,
+            };
+
+            if n == 0 {
+                break;
+            }
+
+            let stats = serde_cbor::de::from_mut_slice(&mut buf[..n])?;
+            debug!("Got result: {:?}", &stats);
+            total.add(&stats);
+
+            count += 1;
+        }
+
+        if count != self.workers.len() {
+            warn!("Got {} results from {} workers. (??)", count, self.workers.len());
+        }
+
         Ok(())
     }
 
@@ -156,22 +208,23 @@ impl Controller {
         }
 
         control.close()?;
+        control.read_results(&mut total)?;
         Ok(total)
     }
 }
 
-pub fn process_file_with_selected_handlers(
+fn process_file_with_selected_handlers(
     handlers: &[Box<dyn handlers::Processor>],
     selected_handlers: u8,
     input_path: &Path,
 ) -> Result<handlers::ProcessResult> {
 
-    let mut entry_mod = handlers::ProcessResult::Noop;
-
     // check if selected_handlers doesn't have any unexpected entries
     if u8::BITS - selected_handlers.leading_zeros() > handlers.len().try_into().unwrap() {
         bail!("Bad handler mask 0x{selected_handlers:x}");
     }
+
+    let mut entry_mod = handlers::ProcessResult::Noop;
 
     for (n_processor, processor) in handlers.iter().enumerate() {
         let cond = selected_handlers & (1 << n_processor) > 0;
@@ -187,16 +240,20 @@ pub fn process_file_with_selected_handlers(
 }
 
 pub fn do_worker_work(config: options::Config) -> Result<()> {
-    let socket = config.socket.unwrap();
-    let socket = unsafe { UnixDatagram::from_raw_fd(socket) };
+    let job_socket = config.job_socket.unwrap();
+    let job_socket = unsafe { UnixDatagram::from_raw_fd(job_socket) };
+
+    let result_socket = config.result_socket.unwrap();
+    let result_socket = unsafe { UnixDatagram::from_raw_fd(result_socket) };
 
     let config = Rc::new(config);
     let handlers = handlers::make_handlers(&config)?;
+    let mut stats = handlers::Stats::new();
 
     let mut buf = vec![0; 4096]; // FIXME: use a better limit here?
 
     loop {
-        let n = match socket.recv(buf.as_mut_slice()) {
+        let n = match job_socket.recv(buf.as_mut_slice()) {
             Err(e) => {
                 bail!("recv failed: {e}");
             }
@@ -204,17 +261,23 @@ pub fn do_worker_work(config: options::Config) -> Result<()> {
         };
 
         if n == 0 {
-            debug!("Worker {} says bye!", process::id());
-            return Ok(());
+            break;
         }
 
         let job: Job = serde_cbor::de::from_mut_slice(&mut buf[..n])?;
         debug!("Got job {:?}", job);
 
-        if let Err(e) =
-            process_file_with_selected_handlers(&handlers, job.selected_handlers, &job.input_path)
-        {
-            warn!("{}: failed to process: {}", job.input_path.display(), e);
-        }
+        let res = process_file_with_selected_handlers(
+            &handlers,
+            job.selected_handlers,
+            &job.input_path)?;
+        stats.add_one(job.selected_handlers, res);
     }
+
+    debug!("Worker {} wrapping up...", process::id());
+    let buf = serde_cbor::ser::to_vec_packed(&stats)?;
+    result_socket.send(&buf)?;
+
+    debug!("Worker {} says bye!", process::id());
+    Ok(())
 }
