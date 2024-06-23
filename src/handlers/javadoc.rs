@@ -81,7 +81,7 @@ impl super::Processor for Javadoc {
         )
     }
 
-    fn process(&self, input_path: &Path) -> Result<bool> {
+    fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
         let mut after_header = false;
 
@@ -101,7 +101,7 @@ impl super::Processor for Javadoc {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::InvalidData {
                         info!("{}:{}: {}, ignoring.", input_path.display(), num + 1, e);
-                        return Ok(false);
+                        return Ok(super::ProcessResult::Noop);
                     } else {
                         return Err(anyhow!("{}: failed to read line: {}", input_path.display(), e));
                     }
@@ -127,7 +127,7 @@ impl super::Processor for Javadoc {
                     };
 
                     debug!("{}:{}: found nothing to replace {}", input_path.display(), num, why);
-                    return Ok(false);
+                    return Ok(super::ProcessResult::Noop);
                 }
 
                 after_header = true;

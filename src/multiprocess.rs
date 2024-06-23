@@ -131,13 +131,13 @@ impl Controller {
         Ok(())
     }
 
-    pub fn do_work(config: options::Config) -> Result<u64> {
+    pub fn do_work(config: options::Config) -> Result<handlers::Stats> {
         let config = Rc::new(config);
 
         let mut control = Controller::create(&config)?;
 
         let mut inodes_seen = handlers::inodes_seen();
-        let mut n_paths = 0;
+        let mut total = handlers::Stats::new();
 
         for input_path in &config.inputs {
             match handlers::process_file_or_dir(
@@ -149,14 +149,14 @@ impl Controller {
                 Err(err) => {
                     warn!("{}: failed to process: {}", input_path.display(), err);
                 }
-                Ok(num) => {
-                    n_paths += num;
+                Ok(stats) => {
+                    total.add(&stats);
                 }
             };
         }
 
         control.close()?;
-        Ok(n_paths)
+        Ok(total)
     }
 }
 
@@ -164,9 +164,9 @@ pub fn process_file_with_selected_handlers(
     handlers: &[Box<dyn handlers::Processor>],
     selected_handlers: u8,
     input_path: &Path,
-) -> Result<bool> {
+) -> Result<handlers::ProcessResult> {
 
-    let mut entry_mod = false;
+    let mut entry_mod = handlers::ProcessResult::Noop;
 
     // check if selected_handlers doesn't have any unexpected entries
     if u8::BITS - selected_handlers.leading_zeros() > handlers.len().try_into().unwrap() {
@@ -178,16 +178,8 @@ pub fn process_file_with_selected_handlers(
 
         if cond {
             debug!("{}: running handler {}", input_path.display(), processor.name());
-
-            match processor.process(input_path) {
-                Err(err) => {
-                    warn!("{}: failed to process: {}", input_path.display(), err);
-                }
-                Ok(false) => {}
-                Ok(true) => {
-                    entry_mod = true;
-                }
-            }
+            let res = processor.process(input_path);
+            entry_mod.extend_or_warn(input_path, res);
         }
     }
 

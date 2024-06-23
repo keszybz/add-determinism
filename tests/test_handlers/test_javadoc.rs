@@ -3,6 +3,7 @@
 use std::fs;
 use std::os::linux::fs::MetadataExt;
 
+use add_determinism::handlers;
 use add_determinism::handlers::javadoc;
 
 use super::{prepare_dir, make_handler};
@@ -17,7 +18,7 @@ fn test_javadoc_example() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), true);
+    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -39,7 +40,7 @@ fn test_javadoc_fixed() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), false);
+    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -57,7 +58,7 @@ fn test_invalid_utf8() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), false);
+    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());

@@ -20,6 +20,31 @@ use std::rc::Rc;
 
 use crate::options;
 
+#[derive(Debug, PartialEq)]
+pub enum ProcessResult {
+    Noop,
+    Replaced,
+    Rewritten,
+}
+
+impl ProcessResult {
+    pub fn extend_or_warn(&mut self, input_path: &Path, result: Result<ProcessResult>) {
+        match result {
+            Err(err) => {
+                warn!("{}: failed to process: {}", input_path.display(), err);
+            }
+            Ok(res) => {
+                if *self == ProcessResult::Noop {
+                    *self = res;
+                } else {
+                    warn!("{}: different process result, hardlink count modified externally?",
+                          input_path.display());
+                }
+            }
+        }
+    }
+}
+
 pub trait Processor {
     fn name(&self) -> &str;
 
@@ -31,13 +56,63 @@ pub trait Processor {
     /// Return true if the given path looks like it should be processed.
     fn filter(&self, path: &Path) -> Result<bool>;
 
-    /// Process file and return true if modifications were made.
-    fn process(&self, path: &Path) -> Result<bool>;
+    /// Process file and indicate whether modifications were made.
+    fn process(&self, path: &Path) -> Result<ProcessResult>;
 }
 
-// pub state: Option<Box<dyn ProcessorState>>,
+#[derive(Debug, PartialEq)]
+pub struct Stats {
+    /// Count of directories that were scanned. This includes both
+    /// command-line arguments and subdirectories found in recursive
+    /// processing.
+    pub directories: u64,
 
-// pub trait ProcessorState {}
+    /// Count of file paths that were scanned. This includes both
+    /// command-line arguments and paths found in recursive
+    /// processing.
+    pub files: u64,
+
+    /// Counf of inodes we actually processed. We maintain a cache of
+    /// processed inode numbers, so a given inode is be processed only
+    /// once.
+    pub inodes_processed: u64,
+
+    /// Count of inodes modified. Split into inodes that were
+    /// atomatically replaced and inodes that were rewritten. We
+    /// do a rewrite if there are hardlinks to maintain them.
+    pub inodes_replaced: u64,
+    pub inodes_rewritten: u64,
+}
+
+impl Stats {
+    pub fn new() -> Self {
+        Stats {
+            directories: 0,
+            files: 0,
+            inodes_processed: 0,
+            inodes_replaced: 0,
+            inodes_rewritten: 0,
+        }
+    }
+
+    pub fn add(&mut self, other: &Stats) {
+        self.directories += other.directories;
+        self.files += other.files;
+        self.inodes_processed += other.inodes_processed;
+        self.inodes_replaced += other.inodes_replaced;
+        self.inodes_rewritten += other.inodes_rewritten;
+    }
+
+    pub fn summarize(&self) {
+        info!("Scanned {} directories and {} files,
+               processed {} inodes,
+               {} modified ({} replaced + {} rewritten)",
+              self.directories, self.files,
+              self.inodes_processed,
+              self.inodes_replaced + self.inodes_rewritten,
+              self.inodes_replaced, self.inodes_rewritten);
+    }
+}
 
 pub type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
 
@@ -82,12 +157,12 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
-pub fn do_normal_work(config: options::Config) -> Result<u64> {
+pub fn do_normal_work(config: options::Config) -> Result<Stats> {
     let config = Rc::new(config);
 
     let handlers = make_handlers(&config)?;
     let mut inodes_seen = inodes_seen();
-    let mut n_paths = 0;
+    let mut total = Stats::new();
 
     for input_path in &config.inputs {
         match process_file_or_dir(
@@ -99,13 +174,13 @@ pub fn do_normal_work(config: options::Config) -> Result<u64> {
             Err(err) => {
                 warn!("{}: failed to process: {}", input_path.display(), err);
             }
-            Ok(num) => {
-                n_paths += num;
+            Ok(stats) => {
+                total.add(&stats);
             }
         }
     }
 
-    Ok(n_paths)
+    Ok(total)
 }
 
 pub type ProcessWrapper<'a> = Option<&'a dyn Fn(u8, &Path) -> Result<()>>;
@@ -115,12 +190,13 @@ fn process_file(
     already_seen: &mut u8,
     input_path: &Path,
     process_wrapper: ProcessWrapper,
-) -> Result<bool> {
+    stats: &mut Stats,
+) -> Result<ProcessResult> {
 
     // When processing locally, this says whether modifications have
     // been made. When processing remotely, it just says whether we
     // requested some processing.
-    let mut entry_mod = false;
+    let mut entry_mod = ProcessResult::Noop;
 
     let mut selected_handlers = 0;
 
@@ -135,21 +211,14 @@ fn process_file(
         }
 
         let cond = processor.filter(input_path)?;
-        debug!("{}: handler {}: {}", input_path.display(), processor.name(), cond);
-
         if cond {
+            debug!("{}: matched by handler {}", input_path.display(), processor.name());
+
             selected_handlers |= 1 << n_processor;
 
             if process_wrapper.is_none() {
-                match processor.process(input_path) {
-                    Err(err) => {
-                        warn!("{}: failed to process: {}", input_path.display(), err);
-                    }
-                    Ok(false) => {}
-                    Ok(true) => {
-                        entry_mod = true;
-                    }
-                }
+                let res = processor.process(input_path);
+                entry_mod.extend_or_warn(input_path, res);
             }
         }
 
@@ -159,9 +228,14 @@ fn process_file(
     if let Some(wrapper) = process_wrapper {
         if selected_handlers > 0 {
             wrapper(selected_handlers, input_path)?;
-            entry_mod = true;
+            // FIXME
+            entry_mod = ProcessResult::Replaced;
         }
     }
+
+    stats.inodes_processed += (selected_handlers > 0) as u64;
+    stats.inodes_replaced += (entry_mod == ProcessResult::Replaced) as u64;
+    stats.inodes_rewritten += (entry_mod == ProcessResult::Rewritten) as u64;
 
     Ok(entry_mod)
 }
@@ -171,14 +245,14 @@ pub fn process_file_or_dir(
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
     process_wrapper: ProcessWrapper,
-) -> Result<u64> {
+) -> Result<Stats> {
 
     let mut first = true; // WalkDir doesn't allow handling the original argument
                           // differently from any subdirectories, but we want to return
                           // an error if the specified path is missing or inaccessible,
                           // so keep a flag to tell us if we're looking at the first
                           // entry.
-    let mut modifications = 0;
+    let mut stats = Stats::new();
 
     for entry in walkdir::WalkDir::new(input_path)
         .follow_links(false)
@@ -200,6 +274,13 @@ pub fn process_file_or_dir(
             debug!("Looking at {}…", entry.path().display());
 
             let metadata = entry.metadata()?;
+
+            if metadata.is_dir() {
+                stats.directories += 1;
+                continue;
+            }
+
+            stats.files += 1;
             if !metadata.is_file() {
                 debug!("{}: not a file", entry.path().display());
                 continue;
@@ -212,12 +293,11 @@ pub fn process_file_or_dir(
                 handlers,
                 &mut already_seen,
                 entry.path(),
-                process_wrapper)?;
+                process_wrapper,
+                &mut stats)?;
 
             inodes_seen.insert(inode, already_seen); // This is the orig inode
-            if entry_mod {
-                modifications += 1;
-
+            if entry_mod != ProcessResult::Noop {
                 // The path might have been replaced with a new inode.
                 let metadata = entry.metadata()?;
                 let inode2 = metadata.ino();
@@ -230,7 +310,7 @@ pub fn process_file_or_dir(
             }
         }
 
-    Ok(modifications)
+    Ok(stats)
 }
 
 pub struct InputOutputHelper<'a> {
@@ -307,7 +387,7 @@ impl<'a> InputOutputHelper<'a> {
         Ok(())
     }
 
-    pub fn finalize(&mut self, have_mod: bool) -> Result<bool> {
+    pub fn finalize(&mut self, have_mod: bool) -> Result<ProcessResult> {
         let meta = &self.input_metadata;
 
         if have_mod {
@@ -321,7 +401,7 @@ impl<'a> InputOutputHelper<'a> {
                     Ok(some) => Some(some),
                     Err(e) => {
                         if e.kind() == io::ErrorKind::NotFound {
-                            return Ok(false); // no modifications and nothing to do
+                            return Ok(ProcessResult::Noop); // no modifications and nothing to do
                         } else {
                             bail!("{}: cannot reopen temporary file: {}", output_path.display(), e);
                         }
@@ -350,6 +430,8 @@ impl<'a> InputOutputHelper<'a> {
                 fs::rename(output_path, self.input_path)?;
                 self.output_path = None; /* The path is now invalid */
 
+                Ok(ProcessResult::Replaced)
+
             } else {
                 output.seek(io::SeekFrom::Start(0))?;
 
@@ -359,10 +441,11 @@ impl<'a> InputOutputHelper<'a> {
                 io::copy(output, &mut input_writer)?;
 
                 input_writer.set_modified(meta.modified()?)?;
+
+                Ok(ProcessResult::Rewritten)
             }
-
+        } else {
+            Ok(ProcessResult::Noop)
         }
-
-        Ok(have_mod)
     }
 }

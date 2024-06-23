@@ -5,6 +5,7 @@ use std::fs::File;
 use std::os::linux::fs::MetadataExt;
 use std::path::Path;
 
+use add_determinism::handlers;
 use add_determinism::handlers::pyc;
 
 use super::{prepare_dir, make_handler, test_corpus_file};
@@ -33,7 +34,7 @@ fn test_adapters() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), true);
+    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -54,7 +55,7 @@ fn test_adapters_hardlinked() {
 
     fs::hard_link(&*input, (*input).with_extension("pyc.evenbetter")).unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), true);
+    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Rewritten);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -72,7 +73,7 @@ fn test_adapters_opt_1() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), true);
+    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -92,7 +93,7 @@ fn test_testrelro_fixed() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), false);
+    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());

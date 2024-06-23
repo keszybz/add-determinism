@@ -5,6 +5,7 @@ use std::os::linux::fs::MetadataExt;
 use std::rc::Rc;
 
 use add_determinism::options;
+use add_determinism::handlers;
 use add_determinism::handlers::ar;
 
 use super::{prepare_dir, make_handler, test_corpus_file};
@@ -19,7 +20,7 @@ fn test_libempty() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), false);
+    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -38,7 +39,7 @@ fn test_testrelro() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), true);
+    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -59,7 +60,7 @@ fn test_testrelro_hardlinked() {
 
     fs::hard_link(&*input, (*input).with_extension("b")).unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), true);
+    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Rewritten);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -95,7 +96,7 @@ fn test_testrelro_fixed() {
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), false);
+    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());

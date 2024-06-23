@@ -44,7 +44,7 @@ impl super::Processor for Ar {
         Ok(path.extension().is_some_and(|x| x == "a"))
     }
 
-    fn process(&self, input_path: &Path) -> Result<bool> {
+    fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
         let (mut io, mut input) = InputOutputHelper::open(input_path)?;
 

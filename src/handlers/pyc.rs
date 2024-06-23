@@ -702,12 +702,12 @@ impl super::Processor for Pyc {
         Ok(path.extension().is_some_and(|x| x == "pyc"))
     }
 
-    fn process(&self, input_path: &Path) -> Result<bool> {
+    fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let (mut io, input) = InputOutputHelper::open(input_path)?;
 
         let mut parser = PycParser::from_file(input_path, input)?;
         if parser.version < (3, 0) {
-            return Ok(false);  // We don't want to touch python2 files
+            return Ok(super::ProcessResult::Noop);  // We don't want to touch python2 files
         }
 
         parser.read_object()?;

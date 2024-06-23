@@ -32,7 +32,7 @@ impl super::Processor for Jar {
         Ok(path.extension().is_some_and(|x| x == "jar"))
     }
 
-    fn process(&self, input_path: &Path) -> Result<bool> {
+    fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
         let (mut io, input) = InputOutputHelper::open(input_path)?;
         let mut input = zip::ZipArchive::new(BufReader::new(input))?;
