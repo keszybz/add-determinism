@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::{debug, info};
 use regex::{Regex, RegexBuilder};
 use std::io;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufWriter, Write};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -86,7 +86,6 @@ impl super::Processor for Javadoc {
         let mut after_header = false;
 
         let (mut io, input) = InputOutputHelper::open(input_path)?;
-        let input = BufReader::new(input);
 
         io.open_output()?;
         let mut output = BufWriter::new(io.output.as_mut().unwrap());
