@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use log::debug;
 use std::io::{Read, Write};
 use std::iter;
@@ -14,11 +14,12 @@ use num_bigint_dig::{BigInt, ToBigInt};
 use crate::handlers::InputOutputHelper;
 use crate::options;
 
+const PYC_MAGIC: &[u8] = &[0x0D, 0x0A];
 const PYLONG_MARSHAL_SHIFT: i32 = 15;
 
 const TRACE: bool = false;
 
-pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
+pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     // https://github.com/python/cpython/blob/main/Lib/importlib/_bootstrap_external.py#L247
     //
     //     Python 1.5:   20121
@@ -253,8 +254,8 @@ pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32
 
     //     Python 3.15 will start with 3700
 
-    if buf[2..] != [0x0D, 0x0A] {
-        return Err(anyhow!("{}: not a pyc file, wrong magic ({:?})", input_path.display(), buf));
+    if &buf[2..] != PYC_MAGIC {
+        return Err(super::Error::BadMagic(2, buf[2..].to_vec(), PYC_MAGIC).into());
     }
 
     let val = ((buf[1] as u32) << 8) + (buf[0] as u32);
@@ -289,7 +290,9 @@ pub fn pyc_python_version(input_path: &Path, buf: &[u8; 4]) -> Result<((u32, u32
         3550..=3599 => Ok(((3, 13), 16)),
         3600..=3699 => Ok(((3, 14), 16)),
         3700..=4000 => Ok(((3, 15), 16)),
-        _ => Err(anyhow!("{}: not a pyc file, unknown version ({:?})", input_path.display(), buf)),
+        _ => Err(super::Error::Other(
+            format!("not a pyc file, unknown version magic {}", val)
+        ).into()),
     }
 }
 
@@ -326,7 +329,6 @@ enum Object {
         linetable: Box<Object>,
         exceptiontable: Option<Box<Object>>,
     },
-    //    String(std::string::String),
     Long(BigInt),
     Int(u32),
     Short(i32),
@@ -369,7 +371,7 @@ impl PycParser {
         let mut buf = [0; 4];
         input.read_exact(&mut buf)?;
 
-        let (version, header_length) = pyc_python_version(input_path, &buf)?;
+        let (version, header_length) = pyc_python_version(&buf)?;
         debug!("{}: pyc file for Python {}.{}", input_path.display(), version.0, version.1);
         if TRACE {
             debug!("{}: pyc file header is {} bytes", input_path.display(), header_length);
@@ -397,8 +399,7 @@ impl PycParser {
             self.read_offset += count;
             Ok(offset)
         } else {
-            Err(anyhow!("{}:{}: cannot take {} bytes",
-                        self.input_path.display(), self.read_offset, count))
+            Err(super::Error::UnexpectedEOF(self.read_offset as u64, count).into())
         }
     }
 
@@ -471,11 +472,15 @@ impl PycParser {
             b'x' |  // COMPLEX
             b'?'    // UNKNOWN
                 => {
-                    return Err(anyhow!("Unimplemented object type '{}'", b));
+                    return Err(super::Error::Other(
+                        format!("unimplemented object type '{}'", b)
+                    ).into());
                 },
             _
                 => {
-                    return Err(anyhow!("Unknown object type '{}'", b));
+                    return Err(super::Error::Other(
+                        format!("unknown object type '{}'", b)
+                    ).into());
                 },
         };
 
@@ -600,9 +605,11 @@ impl PycParser {
 
         // Is this a valid reference to one of the already-flagged objects?
         if index as usize >= self.flag_refs.len() {
-            return Err(anyhow!("{}:0x{:x}: bad reference to flag_ref {} (have {})",
-                               self.input_path.display(), self.read_offset,
-                               index, self.flag_refs.len()));
+            return Err(super::Error::Other(
+                format!("{}:0x{:x}: bad reference to flag_ref {} (have {})",
+                        self.input_path.display(), self.read_offset,
+                        index, self.flag_refs.len())
+            ).into());
         }
 
         self.flag_refs[index as usize].number += 1;

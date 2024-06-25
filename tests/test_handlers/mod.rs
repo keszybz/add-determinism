@@ -76,6 +76,8 @@ fn stats(
         inodes_processed,
         inodes_replaced,
         inodes_rewritten,
+        misunderstood: 0,
+        errors: 0,
     }
 }
 

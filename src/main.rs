@@ -68,5 +68,10 @@ fn main() -> Result<()> {
     }
 
     stats.summarize();
-    Ok(())
+
+    if stats.errors > 0 {
+        bail!("processing failed")
+    } else {
+        Ok(())
+    }
 }

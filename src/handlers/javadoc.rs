@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use log::{debug, info};
 use regex::{Regex, RegexBuilder};
 use std::io;
@@ -103,7 +103,7 @@ impl super::Processor for Javadoc {
                         info!("{}:{}: {}, ignoring.", input_path.display(), num + 1, e);
                         return Ok(super::ProcessResult::Noop);
                     } else {
-                        return Err(anyhow!("{}: failed to read line: {}", input_path.display(), e));
+                        return Err(e.into());
                     }
                 }
                 Ok(line) => line

@@ -18,30 +18,58 @@ use std::os::unix::fs as unix_fs;
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use thiserror::Error;
 
 use crate::options;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("unexpected EOF, cannot take {1} bytes at offset 0x{0:x}")]
+    UnexpectedEOF(u64, usize),
+
+    #[error("wrong magic at offset {0}\n        (have {1:?}, exp. {2:?})")]
+    BadMagic(u64, Vec<u8>, &'static [u8]),
+
+    #[error("{0}")]
+    Other(String),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub enum ProcessResult {
     Noop,
     Replaced,
     Rewritten,
+    BadFormat,
+    Error,
 }
 
 impl ProcessResult {
-    pub fn extend_or_warn(&mut self, input_path: &Path, result: Result<ProcessResult>) {
+    pub fn extend_and_warn(&mut self, input_path: &Path, result: Result<ProcessResult>) {
+        let converted;
+
         match result {
             Err(err) => {
                 warn!("{}: failed to process: {}", input_path.display(), err);
-            }
-            Ok(res) => {
-                if *self == ProcessResult::Noop {
-                    *self = res;
+
+                if err.downcast_ref::<Error>().is_some() {
+                    converted = ProcessResult::BadFormat;
                 } else {
-                    warn!("{}: different process result, hardlink count modified externally?",
-                          input_path.display());
+                    converted = ProcessResult::Error;
                 }
             }
+            Ok(res) => {
+                converted = res;
+            }
+        }
+
+        if (*self == ProcessResult::Replaced && converted == ProcessResult::Rewritten) ||
+            (*self == ProcessResult::Rewritten && converted == ProcessResult::Replaced) {
+            warn!("{}: different process result, hardlink count modified externally?",
+                  input_path.display());
+        }
+
+        if *self < converted {
+            *self = converted;
         }
     }
 }
@@ -83,6 +111,14 @@ pub struct Stats {
     /// do a rewrite if there are hardlinks to maintain them.
     pub inodes_replaced: u64,
     pub inodes_rewritten: u64,
+
+    /// Files that we couldn't understand.
+    /// The case where the file has the right extension, but e.g.
+    /// bad magic, do *not* count.
+    pub misunderstood: u64,
+
+    /// Various errors other than bad format above.
+    pub errors: u64,
 }
 
 impl Stats {
@@ -93,13 +129,21 @@ impl Stats {
             inodes_processed: 0,
             inodes_replaced: 0,
             inodes_rewritten: 0,
+            misunderstood: 0,
+            errors: 0,
         }
     }
 
-    pub fn add_one(&mut self, selected_handlers: u8, result: ProcessResult) {
-        self.inodes_processed += (selected_handlers > 0) as u64;
-        self.inodes_replaced += (result == ProcessResult::Replaced) as u64;
-        self.inodes_rewritten += (result == ProcessResult::Rewritten) as u64;
+    pub fn add_one(&mut self, result: ProcessResult) {
+        self.inodes_processed += 1;
+
+        match result {
+            ProcessResult::Noop      => {},
+            ProcessResult::Replaced  => { self.inodes_replaced += 1;  },
+            ProcessResult::Rewritten => { self.inodes_rewritten += 1; },
+            ProcessResult::BadFormat => { self.misunderstood += 1;    },
+            ProcessResult::Error     => { self.errors += 1;           },
+        }
     }
 
     pub fn add(&mut self, other: &Stats) {
@@ -108,16 +152,20 @@ impl Stats {
         self.inodes_processed += other.inodes_processed;
         self.inodes_replaced += other.inodes_replaced;
         self.inodes_rewritten += other.inodes_rewritten;
+        self.misunderstood += other.misunderstood;
+        self.errors += other.errors;
     }
 
     pub fn summarize(&self) {
         info!("Scanned {} directories and {} files,
                processed {} inodes,
-               {} modified ({} replaced + {} rewritten)",
+               {} modified ({} replaced + {} rewritten),
+               {} unsupported format, {} errors",
               self.directories, self.files,
               self.inodes_processed,
               self.inodes_replaced + self.inodes_rewritten,
-              self.inodes_replaced, self.inodes_rewritten);
+              self.inodes_replaced, self.inodes_rewritten,
+              self.misunderstood, self.errors);
     }
 }
 
@@ -225,22 +273,22 @@ fn process_file(
 
             if process_wrapper.is_none() {
                 let res = processor.process(input_path);
-                entry_mod.extend_or_warn(input_path, res);
+                entry_mod.extend_and_warn(input_path, res);
             }
         }
 
         *already_seen |= selected_handlers;
     }
 
-    if let Some(func) = process_wrapper {
-        if selected_handlers > 0 {
+    if selected_handlers > 0 {
+        if let Some(func) = process_wrapper {
+            assert!(entry_mod == ProcessResult::Noop);
             func(selected_handlers, input_path)?;
+        } else {
+            stats.add_one(entry_mod);
         }
-
-        assert!(entry_mod == ProcessResult::Noop);
     }
 
-    stats.add_one(selected_handlers, entry_mod);
     Ok(entry_mod)
 }
 

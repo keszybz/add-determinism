@@ -159,7 +159,7 @@ impl Controller {
                     if e == errno::Errno::EAGAIN {
                         break;
                     } else {
-                        return Err(anyhow!("read failed: {}", e));
+                        bail!("read failed: {e}");
                     }
                 }
                 Ok(n) => n,
@@ -232,7 +232,7 @@ fn process_file_with_selected_handlers(
         if cond {
             debug!("{}: running handler {}", input_path.display(), processor.name());
             let res = processor.process(input_path);
-            entry_mod.extend_or_warn(input_path, res);
+            entry_mod.extend_and_warn(input_path, res);
         }
     }
 
@@ -267,11 +267,13 @@ pub fn do_worker_work(config: options::Config) -> Result<()> {
         let job: Job = serde_cbor::de::from_mut_slice(&mut buf[..n])?;
         debug!("Got job {:?}", job);
 
+        assert!(job.selected_handlers > 0);
+
         let res = process_file_with_selected_handlers(
             &handlers,
             job.selected_handlers,
             &job.input_path)?;
-        stats.add_one(job.selected_handlers, res);
+        stats.add_one(res);
     }
 
     debug!("Worker {} wrapping up...", process::id());

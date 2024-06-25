@@ -55,8 +55,8 @@ impl super::Processor for Jar {
 
         if let Some(epoch) = epoch {
             match zip::DateTime::try_from(epoch) {
-                Err(err) => {
-                    warn!("Cannot convert epoch {} to zip::DateTime: {}", epoch, err);
+                Err(e) => {
+                    warn!("Cannot convert epoch {} to zip::DateTime: {}", epoch, e);
                 }
                 Ok(dos_epoch) => {
                     let ts: [u8; 4] = [

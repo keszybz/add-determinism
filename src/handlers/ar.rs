@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{Result, Context, anyhow};
+use anyhow::Result;
 use log::debug;
-use std::io::{BufWriter, Read, Seek, Write};
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Seek, Write, ErrorKind};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -25,13 +26,25 @@ impl Ar {
 }
 
 // Like `read_exact`, but EOF is not an error.
-fn read_exact_or_zero(mut r: impl Read, buf: &mut [u8]) -> Result<bool> {
+fn read_exact_or_zero(
+    input: &mut BufReader<File>,
+    buf: &mut [u8],
+) -> Result<bool> {
+
+    let pos = input.stream_position()?;
+
     // End of stream is OK, we return an empty buffer
-    let n = r.read(buf)?;
+    let n = input.read(buf)?;
     if n == 0 {
         return Ok(false);
     }
-    r.read_exact(&mut buf[n..])?;
+    if let Err(e) = input.read_exact(&mut buf[n..]) {
+        if e.kind() == ErrorKind::UnexpectedEof {
+            return Err(super::Error::UnexpectedEOF(pos, FILE_HEADER_LENGTH).into());
+        } else {
+            return Err(e.into());
+        }
+    }
     Ok(true)
 }
 
@@ -51,7 +64,7 @@ impl super::Processor for Ar {
         let mut buf = [0; MAGIC.len()];
         input.read_exact(&mut buf)?;
         if buf != MAGIC {
-            return Err(anyhow!("{}: wrong magic ({:?})", io.input_path.display(), buf));
+            return Err(super::Error::BadMagic(0, buf.to_vec(), MAGIC).into());
         }
 
         io.open_output()?;
@@ -59,17 +72,13 @@ impl super::Processor for Ar {
 
         output.write_all(&buf)?;
 
-        let ipath = io.input_path.display();
         loop {
             let pos = input.stream_position()?;
             let mut buf = [0; FILE_HEADER_LENGTH];
 
-            debug!("{ipath}: reading file header at offset {pos}");
-
-            if !read_exact_or_zero(&mut input, &mut buf)
-                .with_context(|| anyhow!("{}: short read at offset {}",
-                                         io.input_path.display(), pos))? {
-                break
+            debug!("{}: reading file header at offset {pos}", io.input_path.display());
+            if !read_exact_or_zero(&mut input, &mut buf)? {
+                break;
             }
 
             // https://en.wikipedia.org/wiki/Ar_(Unix)
@@ -83,8 +92,8 @@ impl super::Processor for Ar {
             // 58     59     File magic                \140\012
 
             if &buf[58..] != FILE_HEADER_MAGIC {
-                return Err(anyhow!("{}: wrong magic in file header at offset {}: {:?} != {:?}",
-                                   io.input_path.display(), pos, &buf[58..], FILE_HEADER_MAGIC));
+                return Err(
+                    super::Error::BadMagic(pos, buf[58..].to_vec(), FILE_HEADER_MAGIC).into());
             }
 
             let name = std::str::from_utf8(&buf[0..16])?.trim_end_matches(' ');
