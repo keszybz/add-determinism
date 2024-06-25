@@ -49,10 +49,49 @@ fn test_testrelro() {
 }
 
 #[test]
+fn test_testrelro_check() {
+    let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
+
+    let cfg = Rc::new(options::Config::empty(111, true));
+    let ar = ar::Ar::boxed(&cfg);
+
+    assert!(ar.filter(&*input).unwrap());
+
+    let orig = input.metadata().unwrap();
+
+    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+
+    let new = input.metadata().unwrap();
+    assert_eq!(orig.created().unwrap(), new.created().unwrap());
+    assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
+    assert_eq!(orig.st_ino(), new.st_ino());
+}
+
+#[test]
 fn test_testrelro_hardlinked() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
     let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
+
+    assert!(ar.filter(&*input).unwrap());
+
+    let orig = input.metadata().unwrap();
+
+    fs::hard_link(&*input, (*input).with_extension("b")).unwrap();
+
+    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Rewritten);
+
+    let new = input.metadata().unwrap();
+    assert_eq!(orig.created().unwrap(), new.created().unwrap());
+    assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
+    assert_eq!(orig.st_ino(), new.st_ino());
+}
+
+#[test]
+fn test_testrelro_hardlinked_check() {
+    let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
+
+    let ar = make_handler(111, true, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 
