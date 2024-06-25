@@ -5,7 +5,7 @@ mod multiprocess;
 mod options;
 mod simplelog;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use log::{debug, info};
 use std::env;
 use std::path::Path;
@@ -20,23 +20,23 @@ fn brp_check(config: &options::Config) -> Result<()> {
 
     if config.brp {
         let build_root = env::var("RPM_BUILD_ROOT")
-            .map_err(|_| anyhow!("RPM_BUILD_ROOT variable is not defined"))?;
+            .map_err(|_| anyhow!("$RPM_BUILD_ROOT variable is not defined"))?;
 
         if build_root.is_empty() {
-            return Err(anyhow!("Empty RPM_BUILD_ROOT is not allowed"));
+            bail!("Empty $RPM_BUILD_ROOT is not allowed");
         }
 
         let build_root_path = Path::new(&build_root)
             .canonicalize()
-            .map_err(|e| anyhow!("Cannot canonicalize RPM_BUILD_ROOT={:?}: {}", build_root, e))?;
+            .map_err(|e| anyhow!("Cannot canonicalize RPM_BUILD_ROOT={build_root:?}: {e}"))?;
 
         if build_root_path == Path::new("/") {
-            return Err(anyhow!("RPM_BUILD_ROOT={:?} is not allowed", build_root));
+            bail!("RPM_BUILD_ROOT={build_root:?} is not allowed");
         }
 
         for arg in &config.inputs {
             if !arg.starts_with(&build_root_path) {
-                return Err(anyhow!("Path {:?} is outside of $RPM_BUILD_ROOT", arg));
+                bail!("Path {arg:?} is outside of $RPM_BUILD_ROOT");
             }
         }
     }

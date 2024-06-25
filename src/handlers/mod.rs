@@ -5,7 +5,7 @@ pub mod jar;
 pub mod javadoc;
 pub mod pyc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{bail, Context, Result};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::fs;
@@ -63,8 +63,7 @@ pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Process
             match handler.initialize() {
                 Err(e) => {
                     if config.strict_handlers {
-                        let e = anyhow!("Cannot initialize handler {}: {}", handler.name(), e);
-                        return Err(e);
+                        bail!("Cannot initialize handler {}: {}", handler.name(), e);
                     }
                     warn!("Handler {} skipped: {}", handler.name(), e);
                 }
@@ -187,9 +186,9 @@ pub fn process_file_or_dir(
             let entry = match entry {
                 Err(e) => {
                     if first {
-                        return Err(anyhow!("Cannot open path: {}", e));
+                        bail!("Cannot open path: {e}");
                     } else {
-                        warn!("Cannot open path: {}", e);
+                        warn!("Cannot open path: {e}");
                         continue;
                     }
                 },
@@ -281,7 +280,7 @@ impl<'a> InputOutputHelper<'a> {
         let input_file_name = match self.input_path.file_name().unwrap().to_str() {
             Some(name) => name,
             None => {
-                return Err(anyhow!("Invalid file name {:?}", self.input_path));
+                bail!("Invalid file name {:?}", self.input_path);
             }
         };
 
@@ -294,7 +293,7 @@ impl<'a> InputOutputHelper<'a> {
             Ok(some) => some,
             Err(e) => {
                 if e.kind() != io::ErrorKind::AlreadyExists {
-                    return Err(anyhow!("{}: cannot open temporary file: {}", output_path.display(), e));
+                    bail!("{}: cannot open temporary file: {}", output_path.display(), e);
                 }
 
                 debug!("{}: stale temporary file found, removing", output_path.display());
@@ -324,7 +323,7 @@ impl<'a> InputOutputHelper<'a> {
                         if e.kind() == io::ErrorKind::NotFound {
                             return Ok(false); // no modifications and nothing to do
                         } else {
-                            return Err(anyhow!("{}: cannot reopen temporary file: {}", output_path.display(), e));
+                            bail!("{}: cannot reopen temporary file: {}", output_path.display(), e);
                         }
                     }
                 };
@@ -343,7 +342,7 @@ impl<'a> InputOutputHelper<'a> {
                     if e.kind() == io::ErrorKind::PermissionDenied {
                         warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
                     } else {
-                        return Err(anyhow!("{}: cannot change file ownership: {}", self.input_path.display(), e));
+                        bail!("{}: cannot change file ownership: {}", self.input_path.display(), e);
                     }
                 }
 

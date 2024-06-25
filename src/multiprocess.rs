@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use log::{debug, warn};
 use nix::{fcntl, sys, unistd};
 use std::env;
@@ -164,7 +164,7 @@ pub fn process_file_with_selected_handlers(
 
     // check if selected_handlers doesn't have any unexpected entries
     if u8::BITS - selected_handlers.leading_zeros() > handlers.len().try_into().unwrap() {
-        return Err(anyhow!("Bad handler mask 0x{:x}", selected_handlers));
+        bail!("Bad handler mask 0x{selected_handlers:x}");
     }
 
     for (n_processor, processor) in handlers.iter().enumerate() {
@@ -200,9 +200,9 @@ pub fn do_worker_work(config: options::Config) -> Result<()> {
     loop {
         let n = match socket.recv(buf.as_mut_slice()) {
             Err(e) => {
-                return Err(anyhow!("recv failed: {}", e));
+                bail!("recv failed: {e}");
             }
-            Ok(n) => n,
+            Ok(n) => n
         };
 
         if n == 0 {
