@@ -89,7 +89,7 @@ pub trait Processor {
     fn process(&self, path: &Path) -> Result<ProcessResult>;
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Stats {
     /// Count of directories that were scanned. This includes both
     /// command-line arguments and subdirectories found in recursive
@@ -122,17 +122,7 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn new() -> Self {
-        Stats {
-            directories: 0,
-            files: 0,
-            inodes_processed: 0,
-            inodes_replaced: 0,
-            inodes_rewritten: 0,
-            misunderstood: 0,
-            errors: 0,
-        }
-    }
+    pub fn new() -> Self { Default::default() }
 
     pub fn add_one(&mut self, result: ProcessResult) {
         self.inodes_processed += 1;
