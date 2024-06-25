@@ -9,6 +9,7 @@ use anyhow::{anyhow, bail, Result};
 use log::debug;
 use std::env;
 use std::path::Path;
+use std::rc::Rc;
 
 fn brp_check(config: &options::Config) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
@@ -46,9 +47,10 @@ fn brp_check(config: &options::Config) -> Result<()> {
 
 fn main() -> Result<()> {
     let config = match options::Config::make()? {
-        None => { return Ok(()); },
+        None => { return Ok(()); }
         Some(some) => some
     };
+    let config = Rc::new(config);
 
     brp_check(&config)?;
 
@@ -56,22 +58,27 @@ fn main() -> Result<()> {
 
     if let Some(socket) = config.job_socket {
         debug!("Running as worker on job socket {}", socket);
-        return multiprocess::do_worker_work(config);
+        return multiprocess::do_worker_work(&config);
 
     } else if let Some(jobs) = config.jobs {
         debug!("Running as controller with {} workers", jobs);
-        stats = multiprocess::Controller::do_work(config)?;
+        stats = multiprocess::Controller::do_work(&config)?;
 
     } else {
         // We're not the controller
-        stats = handlers::do_normal_work(config)?;
+        stats = handlers::do_normal_work(&config)?;
     }
 
     stats.summarize();
 
     if stats.errors > 0 {
         bail!("processing failed")
-    } else {
+    } else if config.check && stats.misunderstood > 0 {
+        bail!("--check was specified some files couldn't be processed")
+    } else if config.check && (stats.inodes_replaced > 0 ||
+                               stats.inodes_rewritten > 0) {
+        bail!("--check was specified some files would have been modified")
+    }  else {
         Ok(())
     }
 }

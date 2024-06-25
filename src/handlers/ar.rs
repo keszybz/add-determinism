@@ -59,7 +59,7 @@ impl super::Processor for Ar {
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
-        let (mut io, mut input) = InputOutputHelper::open(input_path)?;
+        let (mut io, mut input) = InputOutputHelper::open(input_path, self.config.check)?;
 
         let mut buf = [0; MAGIC.len()];
         input.read_exact(&mut buf)?;

@@ -47,6 +47,9 @@ impl Controller {
         if config.verbose {
             cmd.arg("-v");
         }
+        if config.check {
+            cmd.arg("--check");
+        }
         cmd.arg("--handler")
             .arg(handlers
                  .iter()
@@ -183,10 +186,8 @@ impl Controller {
         Ok(())
     }
 
-    pub fn do_work(config: options::Config) -> Result<handlers::Stats> {
-        let config = Rc::new(config);
-
-        let mut control = Controller::create(&config)?;
+    pub fn do_work(config: &Rc<options::Config>) -> Result<handlers::Stats> {
+        let mut control = Controller::create(config)?;
 
         let mut inodes_seen = handlers::inodes_seen();
         let mut total = handlers::Stats::new();
@@ -239,15 +240,14 @@ fn process_file_with_selected_handlers(
     Ok(entry_mod)
 }
 
-pub fn do_worker_work(config: options::Config) -> Result<()> {
+pub fn do_worker_work(config: &Rc<options::Config>) -> Result<()> {
     let job_socket = config.job_socket.unwrap();
     let job_socket = unsafe { UnixDatagram::from_raw_fd(job_socket) };
 
     let result_socket = config.result_socket.unwrap();
     let result_socket = unsafe { UnixDatagram::from_raw_fd(result_socket) };
 
-    let config = Rc::new(config);
-    let handlers = handlers::make_handlers(&config)?;
+    let handlers = handlers::make_handlers(config)?;
     let mut stats = handlers::Stats::new();
 
     let mut buf = vec![0; 4096]; // FIXME: use a better limit here?

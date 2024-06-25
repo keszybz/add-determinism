@@ -212,10 +212,8 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
-pub fn do_normal_work(config: options::Config) -> Result<Stats> {
-    let config = Rc::new(config);
-
-    let handlers = make_handlers(&config)?;
+pub fn do_normal_work(config: &Rc<options::Config>) -> Result<Stats> {
+    let handlers = make_handlers(config)?;
     let mut inodes_seen = inodes_seen();
     let mut total = Stats::new();
 
@@ -371,6 +369,8 @@ pub struct InputOutputHelper<'a> {
 
     pub output_path: Option<PathBuf>,
     pub output: Option<File>,
+
+    pub check: bool,
 }
 
 impl<'a> Drop for InputOutputHelper<'a> {
@@ -387,7 +387,7 @@ impl<'a> Drop for InputOutputHelper<'a> {
 }
 
 impl<'a> InputOutputHelper<'a> {
-    pub fn open(input_path: &'a Path) -> Result<(Self, BufReader<File>)> {
+    pub fn open(input_path: &'a Path, check: bool) -> Result<(Self, BufReader<File>)> {
 
         let input = File::open(input_path)
             .with_context(|| format!("Cannot open {:?}", input_path))?;
@@ -400,6 +400,7 @@ impl<'a> InputOutputHelper<'a> {
             input_metadata,
             output_path: None,
             output: None,
+            check,
         };
 
         Ok((io, input))
@@ -408,6 +409,9 @@ impl<'a> InputOutputHelper<'a> {
     pub fn open_output(&mut self) -> Result<()> {
         assert!(self.output_path.is_none());
         assert!(self.output.is_none());
+
+        // TODO: if .check, open a null sink here?
+        // We'd avoid some IO and also not require the output path to be writable.
 
         let input_file_name = match self.input_path.file_name().unwrap().to_str() {
             Some(name) => name,
@@ -467,32 +471,36 @@ impl<'a> InputOutputHelper<'a> {
             // If it has multiple links, we reopen the orignal file and rewrite it.
             // This way the inode number is retained and hard links are not broken.
             if meta.nlink() == 1 {
-                output.set_permissions(meta.permissions())?;
-                output.set_modified(meta.modified()?)?;
-
-                if let Err(e) = unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
-                    if e.kind() == io::ErrorKind::PermissionDenied {
-                        warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
-                    } else {
-                        bail!("{}: cannot change file ownership: {}", self.input_path.display(), e);
-                    }
-                }
-
                 info!("{}: replacing with normalized version", self.input_path.display());
-                fs::rename(output_path, self.input_path)?;
-                self.output_path = None; /* The path is now invalid */
+
+                if !self.check {
+                    output.set_permissions(meta.permissions())?;
+                    output.set_modified(meta.modified()?)?;
+
+                    if let Err(e) = unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
+                        if e.kind() == io::ErrorKind::PermissionDenied {
+                            warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
+                        } else {
+                            bail!("{}: cannot change file ownership: {}", self.input_path.display(), e);
+                        }
+                    }
+
+                    fs::rename(output_path, self.input_path)?;
+                    self.output_path = None; /* The path is now invalid */
+                }
 
                 Ok(ProcessResult::Replaced)
 
             } else {
-                output.seek(io::SeekFrom::Start(0))?;
-
-                let mut input_writer = File::options().write(true).open(self.input_path)?;
-
                 info!("{}: rewriting with normalized contents", self.input_path.display());
-                io::copy(output, &mut input_writer)?;
 
-                input_writer.set_modified(meta.modified()?)?;
+                if !self.check {
+                    output.seek(io::SeekFrom::Start(0))?;
+
+                    let mut input_writer = File::options().write(true).open(self.input_path)?;
+                    io::copy(output, &mut input_writer)?;
+                    input_writer.set_modified(meta.modified()?)?;
+                }
 
                 Ok(ProcessResult::Rewritten)
             }

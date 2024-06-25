@@ -34,7 +34,7 @@ impl super::Processor for Jar {
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
-        let (mut io, input) = InputOutputHelper::open(input_path)?;
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
         let mut input = zip::ZipArchive::new(input)?;
 
         io.open_output()?;

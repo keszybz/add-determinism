@@ -31,6 +31,10 @@ struct Options {
     #[arg(short, long)]
     pub verbose: bool,
 
+    /// Fail if any modifications would have been made
+    #[arg(long)]
+    pub check: bool,
+
     /// Read paths to process from this socket.
     /// When used, an explicit list of handlers must be given.
     #[arg(long,
@@ -61,6 +65,7 @@ pub struct Config {
     pub verbose: bool,
     pub job_socket: Option<RawFd>,
     pub result_socket: Option<RawFd>,
+    pub check: bool,
     pub jobs: Option<u32>,
     pub source_date_epoch: Option<i64>,
     pub handler_names: Vec<&'static str>,
@@ -164,6 +169,7 @@ impl Config {
             verbose: options.verbose,
             job_socket: options.job_socket,
             result_socket: options.result_socket,
+            check: options.check,
             jobs: options.jobs,
             source_date_epoch,
             handler_names,
@@ -180,6 +186,7 @@ impl Config {
             verbose: false,
             job_socket: None,
             result_socket: None,
+            check: false,
             jobs: None,
             source_date_epoch: Some(source_date_epoch),
             handler_names: vec![],

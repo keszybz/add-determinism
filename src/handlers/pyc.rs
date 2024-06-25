@@ -296,11 +296,13 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     }
 }
 
-pub struct Pyc {}
+pub struct Pyc {
+    config: Rc<options::Config>,
+}
 
 impl Pyc {
-    pub fn boxed(_config: &Rc<options::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self {})
+    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+        Box::new(Self { config: config.clone() })
     }
 }
 
@@ -710,7 +712,7 @@ impl super::Processor for Pyc {
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
-        let (mut io, input) = InputOutputHelper::open(input_path)?;
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
 
         let mut parser = PycParser::from_file(input_path, input)?;
         if parser.version < (3, 0) {
