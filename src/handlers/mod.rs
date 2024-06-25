@@ -8,6 +8,7 @@ pub mod pyc;
 use anyhow::{bail, Context, Result};
 use log::{debug, info, warn};
 use serde::{Serialize, Deserialize};
+use std::ascii::escape_default;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, Metadata};
@@ -27,11 +28,22 @@ pub enum Error {
     #[error("unexpected EOF, cannot take {1} bytes at offset 0x{0:x}")]
     UnexpectedEOF(u64, usize),
 
-    #[error("wrong magic at offset {0}\n        (have {1:?}, exp. {2:?})")]
+    #[error("wrong magic at offset {0}\n        (have \"{}\", exp. \"{}\")",
+            asciify(.1), asciify(.2))]
     BadMagic(u64, Vec<u8>, &'static [u8]),
 
     #[error("{0}")]
     Other(String),
+}
+
+// based on https://stackoverflow.com/a/52671523
+pub fn asciify<B: AsRef<[u8]>>(buf: B) -> String {
+    String::from_utf8(
+        buf.as_ref()
+            .iter()
+            .flat_map(|b| escape_default(*b))
+            .collect(),
+    ).unwrap()
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
@@ -497,5 +509,19 @@ impl<'a> InputOutputHelper<'a> {
         } else {
             Ok(ProcessResult::Noop)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_asciify() {
+        assert_eq!(asciify("asdf"), "asdf");
+        assert_eq!(asciify("\"\""), "\\\"\\\"");
+        assert_eq!(asciify("\n\t\r"), "\\n\\t\\r");
+        assert_eq!(asciify("zębina"), "z\\xc4\\x99bina");
+        assert_eq!(asciify([0; 4]), "\\x00\\x00\\x00\\x00");
     }
 }
