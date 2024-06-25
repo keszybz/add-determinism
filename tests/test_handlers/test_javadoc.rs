@@ -12,7 +12,7 @@ use super::{prepare_dir, make_handler};
 fn test_javadoc_example() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.html").unwrap();
 
-    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
+    let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 
@@ -34,7 +34,7 @@ fn test_javadoc_example() {
 fn test_javadoc_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.fixed.html").unwrap();
 
-    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
+    let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 
@@ -52,7 +52,7 @@ fn test_javadoc_fixed() {
 fn test_invalid_utf8() {
     let (_dir, input) = prepare_dir("tests/cases/invalid-utf8.html").unwrap();
 
-    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
+    let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 

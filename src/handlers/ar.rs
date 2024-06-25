@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(options::Config::empty(0));
+        let cfg = Rc::new(options::Config::empty(0, true));
         let h = Ar::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/libfoobar.a")).unwrap());

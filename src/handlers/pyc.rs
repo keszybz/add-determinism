@@ -737,7 +737,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(options::Config::empty(0));
+        let cfg = Rc::new(options::Config::empty(0, false));
         let h = Pyc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/foobar.pyc")).unwrap());

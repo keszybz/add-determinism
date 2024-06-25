@@ -21,10 +21,11 @@ fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {
 
 fn make_handler(
     source_date_epoch: i64,
+    check: bool,
     func: handlers::HandlerBoxed,
 ) -> Result<Box<dyn handlers::Processor>> {
 
-    let cfg = Rc::new(options::Config::empty(source_date_epoch));
+    let cfg = Rc::new(options::Config::empty(source_date_epoch, check));
     let mut handler = func(&cfg);
     handler.initialize()?;
     Ok(handler)
@@ -111,7 +112,7 @@ fn test_inode_map() {
 fn test_inode_map_2() {
     let (dir, _input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
+    let cfg = Rc::new(options::Config::empty(111, false));
     let ar = handlers::ar::Ar::boxed(&cfg);
 
     let handlers = vec![ar];

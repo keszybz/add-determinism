@@ -28,7 +28,7 @@ fn test_pyc_python_version() {
 fn test_adapters() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.pyc").unwrap();
 
-    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
+    let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 
@@ -47,7 +47,7 @@ fn test_adapters() {
 fn test_adapters_hardlinked() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.pyc").unwrap();
 
-    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
+    let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 
@@ -67,7 +67,7 @@ fn test_adapters_hardlinked() {
 fn test_adapters_opt_1() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312.opt-1.pyc").unwrap();
 
-    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
+    let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 
@@ -87,7 +87,7 @@ fn test_adapters_opt_1() {
 fn test_testrelro_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312~fixed.pyc").unwrap();
 
-    let pyc = make_handler(111, pyc::Pyc::boxed).unwrap();
+    let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 
@@ -108,7 +108,7 @@ fn test_python_stdlib_file_1() {
 }
 
 fn test_python_stdlib_file(filename: &str) {
-    let pyc = make_handler(1717842014, pyc::Pyc::boxed).unwrap();
+    let pyc = make_handler(1717842014, false, pyc::Pyc::boxed).unwrap();
     test_corpus_file(pyc, filename);
 }
 

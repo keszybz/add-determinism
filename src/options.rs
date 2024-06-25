@@ -179,14 +179,14 @@ impl Config {
 
     #[allow(dead_code)]
     // FIXME: should this be marked as #[cfg(test)]? But then the tests don't compile.
-    pub const fn empty(source_date_epoch: i64) -> Self {
+    pub const fn empty(source_date_epoch: i64, check: bool) -> Self {
         Self {
             inputs: vec![],
             brp: false,
             verbose: false,
             job_socket: None,
             result_socket: None,
-            check: false,
+            check,
             jobs: None,
             source_date_epoch: Some(source_date_epoch),
             handler_names: vec![],
