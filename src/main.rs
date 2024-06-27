@@ -36,7 +36,7 @@ fn brp_check(config: &options::Config) -> Result<()> {
 
         for arg in &config.inputs {
             if !arg.starts_with(&build_root_path) {
-                bail!("Path {arg:?} is outside of $RPM_BUILD_ROOT");
+                bail!("Path {arg:?} is outside of RPM_BUILD_ROOT={build_root:?}");
             }
         }
     }
