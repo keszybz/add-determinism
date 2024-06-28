@@ -3,6 +3,7 @@
 use std::fs;
 use std::os::linux::fs::MetadataExt;
 
+use add_determinism::handlers;
 use add_determinism::handlers::javadoc;
 
 use super::{prepare_dir, make_handler};
@@ -11,13 +12,13 @@ use super::{prepare_dir, make_handler};
 fn test_javadoc_example() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.html").unwrap();
 
-    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
+    let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), true);
+    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -33,13 +34,13 @@ fn test_javadoc_example() {
 fn test_javadoc_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/javadoc-example.fixed.html").unwrap();
 
-    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
+    let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), false);
+    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -51,13 +52,13 @@ fn test_javadoc_fixed() {
 fn test_invalid_utf8() {
     let (_dir, input) = prepare_dir("tests/cases/invalid-utf8.html").unwrap();
 
-    let javadoc = make_handler(1704106800, javadoc::Javadoc::boxed).unwrap();
+    let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
     assert!(javadoc.filter(&*input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), false);
+    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());

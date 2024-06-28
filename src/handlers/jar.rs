@@ -32,10 +32,10 @@ impl super::Processor for Jar {
         Ok(path.extension().is_some_and(|x| x == "jar"))
     }
 
-    fn process(&self, input_path: &Path) -> Result<bool> {
+    fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
-        let (mut io, input) = InputOutputHelper::open(input_path)?;
-        let mut input = zip::ZipArchive::new(BufReader::new(input))?;
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
+        let mut input = zip::ZipArchive::new(input)?;
 
         io.open_output()?;
 
@@ -55,8 +55,8 @@ impl super::Processor for Jar {
 
         if let Some(epoch) = epoch {
             match zip::DateTime::try_from(epoch) {
-                Err(err) => {
-                    warn!("Cannot convert epoch {} to zip::DateTime: {}", epoch, err);
+                Err(e) => {
+                    warn!("Cannot convert epoch {} to zip::DateTime: {}", epoch, e);
                 }
                 Ok(dos_epoch) => {
                     let ts: [u8; 4] = [

@@ -21,10 +21,11 @@ fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {
 
 fn make_handler(
     source_date_epoch: i64,
+    check: bool,
     func: handlers::HandlerBoxed,
 ) -> Result<Box<dyn handlers::Processor>> {
 
-    let cfg = Rc::new(options::Config::empty(source_date_epoch));
+    let cfg = Rc::new(options::Config::empty(source_date_epoch, check));
     let mut handler = func(&cfg);
     handler.initialize()?;
     Ok(handler)
@@ -46,8 +47,8 @@ impl handlers::Processor for Trivial {
         Ok(true)
     }
 
-    fn process(&self, _input_path: &Path) -> Result<bool> {
-        Ok(true)
+    fn process(&self, _input_path: &Path) -> Result<handlers::ProcessResult> {
+        Ok(handlers::ProcessResult::Replaced)
     }
 }
 
@@ -55,7 +56,7 @@ impl handlers::Processor for Trivial {
 fn test_input_output_helper_drop() {
     let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
-    let (mut helper, _) = handlers::InputOutputHelper::open(&*input).unwrap();
+    let (mut helper, _) = handlers::InputOutputHelper::open(&*input, false).unwrap();
     helper.open_output().unwrap();
 
     let output_path = helper.output_path.as_ref().unwrap().clone();
@@ -63,6 +64,22 @@ fn test_input_output_helper_drop() {
     assert!(output_path.exists());
     drop(helper);
     assert!(!output_path.exists());
+}
+
+fn stats(
+    inodes_processed: u64,
+    inodes_replaced: u64,
+    inodes_rewritten: u64,
+) -> handlers::Stats {
+    handlers::Stats {
+        directories: 1,
+        files: 1,
+        inodes_processed,
+        inodes_replaced,
+        inodes_rewritten,
+        misunderstood: 0,
+        errors: 0,
+    }
 }
 
 #[test]
@@ -73,20 +90,20 @@ fn test_inode_map() {
     let mut cache = handlers::inodes_seen();
 
     let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
-    assert_eq!(mods, 1);
+    assert_eq!(mods, stats(1, 1, 0));
 
     let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
-    assert_eq!(mods, 0);
+    assert_eq!(mods, stats(0, 0, 0));
 
     assert_eq!(cache.len(), 1);
 
     handlers.push(Trivial::boxed());
 
     let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
-    assert_eq!(mods, 1);
+    assert_eq!(mods, stats(1, 1, 0));
 
     let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
-    assert_eq!(mods, 0);
+    assert_eq!(mods, stats(0, 0, 0));
 
     assert_eq!(cache.len(), 1);
 }
@@ -95,17 +112,18 @@ fn test_inode_map() {
 fn test_inode_map_2() {
     let (dir, _input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111));
+    let cfg = Rc::new(options::Config::empty(111, false));
     let ar = handlers::ar::Ar::boxed(&cfg);
 
     let handlers = vec![ar];
     let mut cache = handlers::inodes_seen();
 
     let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
-    assert_eq!(mods, 1);
+    assert_eq!(mods, stats(1, 1, 0));
 
     let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
-    assert_eq!(mods, 0); // The file was already processed, so no change
+    // The file was already processed, so no change
+    assert_eq!(mods, stats(0, 0, 0));
 
     // The inode changes because we rewrite the file
     assert_eq!(cache.len(), 2);
@@ -117,14 +135,18 @@ fn test_corpus_file(handler: Box<dyn handlers::Processor>, filename: &str) {
 
     let ext = filename.extension().unwrap().to_str().unwrap().to_owned();
     let fixed = filename.with_extension(ext + ".fixed");
-    let have_mod = fixed.exists();
+    let have_mod = if fixed.exists() {
+        handlers::ProcessResult::Replaced
+    } else {
+        handlers::ProcessResult::Noop
+    };
 
     assert!(handler.filter(&*input).unwrap());
     assert_eq!(handler.process(&*input).unwrap(), have_mod);
 
     let mut data_expected = vec![];
     fs::File::open(
-        if have_mod { &fixed } else { filename }
+        if have_mod == handlers::ProcessResult::Replaced { &fixed } else { filename }
     ).unwrap()
         .read_to_end(&mut data_expected).unwrap();
 

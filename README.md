@@ -44,6 +44,13 @@ This option is intended to be used in rpm macros that define post-install steps.
 See [redhat-rpm-config pull request #293](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/293)
 for a pull request that added a call to `add-determinism` in `%__os_install_post`.
 
+### Verification instead of modification
+
+When invoked with `--check`, the tool processes all files,
+but does not actually save any modifications.
+Instead, it'll fail if any files would have been modified.
+It also returns an error if any files cannot be read.
+
 ## Processors
 
 ### `ar`
@@ -56,7 +63,7 @@ Resets the embedded modification times to `$SOURCE_DATE_EPOCH` and owner:group t
 
 Accepts `*.jar`.
 
-This rewrites the zip file using the `zip` create.
+This rewrites the zip file using the `zip` crate.
 The modification times of archive entries is clamped `$SOURCE_DATE_EPOCH`.
 Extra metadata, i.e. primarily timestamps in UNIX format and DOS permissions,
 are stripped (also because the crate does not support them).
@@ -75,8 +82,9 @@ and `<meta name="dc.created" content="<date>">` is replaced by a version with `$
 
 Accepts `*.pyc`.
 
-This handler implements a `.pyc` file parser and cleans up ununsed "flag references".
-It is a native reimplementation of
+This handler implements a `.pyc` file parser for Python bytecode files
+and cleans up unused "flag references".
+It is a Rust reimplementation of
 the [MarshalParser Python module](https://github.com/fedora-python/marshalparser).
 
 ## Notes
@@ -87,3 +95,5 @@ but is written from scratch in Rust.
 For Debian, build tools are written in Perl and more Perl is not an issue.
 But in Fedora/RHEL/…, tools are written in Bash, Python, or compiled,
 and we don't want to pull in Perl into all buildroots.
+In addition, the details differ in what kinds of processing we want to do.
+For example, Debian does not distribute Python bytecode files.

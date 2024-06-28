@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use log::{debug, info};
 use regex::{Regex, RegexBuilder};
 use std::io;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufWriter, Write};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -81,12 +81,11 @@ impl super::Processor for Javadoc {
         )
     }
 
-    fn process(&self, input_path: &Path) -> Result<bool> {
+    fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
         let mut after_header = false;
 
-        let (mut io, input) = InputOutputHelper::open(input_path)?;
-        let input = BufReader::new(input);
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
 
         io.open_output()?;
         let mut output = BufWriter::new(io.output.as_mut().unwrap());
@@ -101,9 +100,9 @@ impl super::Processor for Javadoc {
                 Err(e) => {
                     if e.kind() == io::ErrorKind::InvalidData {
                         info!("{}:{}: {}, ignoring.", input_path.display(), num + 1, e);
-                        return Ok(false);
+                        return Ok(super::ProcessResult::Noop);
                     } else {
-                        return Err(anyhow!("{}: failed to read line: {}", input_path.display(), e));
+                        return Err(e.into());
                     }
                 }
                 Ok(line) => line
@@ -127,7 +126,7 @@ impl super::Processor for Javadoc {
                     };
 
                     debug!("{}:{}: found nothing to replace {}", input_path.display(), num, why);
-                    return Ok(false);
+                    return Ok(super::ProcessResult::Noop);
                 }
 
                 after_header = true;
@@ -149,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_filter_html() {
-        let cfg = Rc::new(options::Config::empty(1704106800));
+        let cfg = Rc::new(options::Config::empty(1704106800, false));
         let h = Javadoc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/page.html")).unwrap());
@@ -163,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_process_line() {
-        let config = Rc::new(options::Config::empty(1704106800));
+        let config = Rc::new(options::Config::empty(1704106800, false));
         let h = Javadoc { config };
         let plu = |s| h.process_line(s).unwrap();
 
