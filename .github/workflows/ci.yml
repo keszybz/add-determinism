@@ -36,8 +36,10 @@ jobs:
           rustup default ${{ matrix.rust }}
       - name: Build
         run: cargo build --release --verbose
-      - name: Run tests
+      - name: Run check
         run: cargo check --release --verbose
+      - name: Run tests
+        run: cargo test --release --verbose
 
   clippy:
     name: clippy
