@@ -273,7 +273,7 @@ fn process_file(
 
     if selected_handlers > 0 {
         if let Some(func) = process_wrapper {
-            assert!(entry_mod == ProcessResult::Noop);
+            assert!(entry_mod == ProcessResult::Ignored);
             func(selected_handlers, input_path)?;
         }
     }
