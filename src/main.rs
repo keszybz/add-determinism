@@ -71,13 +71,15 @@ fn main() -> Result<()> {
 
     stats.summarize();
 
-    if stats.errors > 0 {
+    if (config.check || !config.brp) && stats.errors > 0 {
+        // Make any errors fatal, except when --brp (without --check) is used.
+        // In normal rpms builds, we don't want the build to fail.
         bail!("processing failed")
     } else if config.check && stats.misunderstood > 0 {
-        bail!("--check was specified some files couldn't be processed")
+        bail!("--check was specified, but some files couldn't be processed")
     } else if config.check && (stats.inodes_replaced > 0 ||
                                stats.inodes_rewritten > 0) {
-        bail!("--check was specified some files would have been modified")
+        bail!("--check was specified, but some files would have been modified")
     }  else {
         Ok(())
     }

@@ -49,6 +49,7 @@ pub fn asciify<B: AsRef<[u8]>>(buf: B) -> String {
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub enum ProcessResult {
+    Ignored,
     Noop,
     Replaced,
     Rewritten,
@@ -57,23 +58,23 @@ pub enum ProcessResult {
 }
 
 impl ProcessResult {
-    pub fn extend_and_warn(&mut self, input_path: &Path, result: Result<ProcessResult>) {
-        let converted;
-
+    pub fn convert_and_warn(input_path: &Path, result: Result<ProcessResult>) -> ProcessResult {
         match result {
             Err(err) => {
                 warn!("{}: failed to process: {}", input_path.display(), err);
 
                 if err.downcast_ref::<Error>().is_some() {
-                    converted = ProcessResult::BadFormat;
+                    ProcessResult::BadFormat
                 } else {
-                    converted = ProcessResult::Error;
+                    ProcessResult::Error
                 }
             }
-            Ok(res) => {
-                converted = res;
-            }
+            Ok(res) => res
         }
+    }
+
+    pub fn extend_and_warn(&mut self, input_path: &Path, result: Result<ProcessResult>) {
+        let converted = ProcessResult::convert_and_warn(input_path, result);
 
         if (*self == ProcessResult::Replaced && converted == ProcessResult::Rewritten) ||
             (*self == ProcessResult::Rewritten && converted == ProcessResult::Replaced) {
@@ -138,15 +139,16 @@ impl Stats {
     pub fn new() -> Self { Default::default() }
 
     pub fn add_one(&mut self, result: ProcessResult) {
-        self.inodes_processed += 1;
-
         match result {
-            ProcessResult::Noop      => {},
-            ProcessResult::Replaced  => { self.inodes_replaced += 1;  },
-            ProcessResult::Rewritten => { self.inodes_rewritten += 1; },
-            ProcessResult::BadFormat => { self.misunderstood += 1;    },
-            ProcessResult::Error     => { self.errors += 1;           },
+            ProcessResult::Ignored   => { return; }
+            ProcessResult::Noop      => {}
+            ProcessResult::Replaced  => { self.inodes_replaced += 1;  }
+            ProcessResult::Rewritten => { self.inodes_rewritten += 1; }
+            ProcessResult::BadFormat => { self.misunderstood += 1;    }
+            ProcessResult::Error     => { self.errors += 1;           }
         }
+
+        self.inodes_processed += 1;
     }
 
     pub fn add(&mut self, other: &Stats) {
@@ -221,19 +223,8 @@ pub fn do_normal_work(config: &Rc<options::Config>) -> Result<Stats> {
     let mut total = Stats::new();
 
     for input_path in &config.inputs {
-        match process_file_or_dir(
-            &handlers,
-            &mut inodes_seen,
-            input_path,
-            None)
-        {
-            Err(err) => {
-                warn!("{}: failed to process: {}", input_path.display(), err);
-            }
-            Ok(stats) => {
-                total.add(&stats);
-            }
-        }
+        let stats = process_file_or_dir(&handlers, &mut inodes_seen, input_path, None)?;
+        total.add(&stats);
     }
 
     Ok(total)
@@ -246,13 +237,12 @@ fn process_file(
     already_seen: &mut u8,
     input_path: &Path,
     process_wrapper: ProcessWrapper,
-    stats: &mut Stats,
 ) -> Result<ProcessResult> {
 
     // When processing locally, this says whether modifications have
     // been made. When processing remotely, we will send the result
     // separately after asynchronous processing is finished.
-    let mut entry_mod = ProcessResult::Noop;
+    let mut entry_mod = ProcessResult::Ignored;
 
     let mut selected_handlers = 0;
 
@@ -285,8 +275,59 @@ fn process_file(
         if let Some(func) = process_wrapper {
             assert!(entry_mod == ProcessResult::Noop);
             func(selected_handlers, input_path)?;
-        } else {
-            stats.add_one(entry_mod);
+        }
+    }
+
+    Ok(entry_mod)
+}
+
+fn process_entry(
+    handlers: &[Box<dyn Processor>],
+    inodes_seen: &mut HashMap<u64, u8>,
+    process_wrapper: ProcessWrapper,
+    stats: &mut Stats,
+    entry: &walkdir::DirEntry,
+) -> Result<ProcessResult> {
+
+    debug!("Looking at {}…", entry.path().display());
+
+    let name = unwrap_os_string(entry.file_name())?;
+    if name.starts_with(".#.") && name.ends_with(".tmp") {
+        // This is our own temporary file. Ignore it.
+        return Ok(ProcessResult::Ignored);
+    }
+
+    let metadata = entry.metadata()?;
+    if metadata.is_dir() {
+        stats.directories += 1;
+        return Ok(ProcessResult::Ignored);
+    }
+
+    stats.files += 1;
+    if !metadata.is_file() {
+        debug!("{}: not a file", entry.path().display());
+        return Ok(ProcessResult::Ignored);
+    }
+
+    let inode = metadata.ino();
+    let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
+
+    let entry_mod = process_file(
+        handlers,
+        &mut already_seen,
+        entry.path(),
+        process_wrapper)?;
+
+    inodes_seen.insert(inode, already_seen); // This is the orig inode
+    if entry_mod != ProcessResult::Noop {
+        // The path might have been replaced with a new inode.
+        let metadata = entry.metadata()?;
+        let inode2 = metadata.ino();
+        if inode2 != inode {
+            // This is the new inode. We use the same set of bits in
+            // already_seen, because those handlers have already been
+            // applied to the contents of the new inode.
+            inodes_seen.insert(inode2, already_seen);
         }
     }
 
@@ -311,62 +352,20 @@ pub fn process_file_or_dir(
         .follow_links(false)
         .into_iter() {
             let entry = match entry {
+                Err(e) if first => {
+                    return Err(e.into());
+                }
                 Err(e) => {
-                    if first {
-                        bail!("Cannot open path: {e}");
-                    } else {
-                        warn!("Cannot open path: {e}");
-                        continue;
-                    }
-                },
-                Ok(entry) => entry,
+                    warn!("Failed to process: {e}");
+                    stats.errors += 1;
+                    continue;
+                }
+                Ok(entry) => entry
             };
-
             first = false;
 
-            debug!("Looking at {}…", entry.path().display());
-
-            let name = unwrap_os_string(entry.file_name())?;
-            if name.starts_with(".#.") && name.ends_with(".tmp") {
-                // This is our own temporary file. Ignore it.
-                continue;
-            }
-
-            let metadata = entry.metadata()?;
-
-            if metadata.is_dir() {
-                stats.directories += 1;
-                continue;
-            }
-
-            stats.files += 1;
-            if !metadata.is_file() {
-                debug!("{}: not a file", entry.path().display());
-                continue;
-            }
-
-            let inode = metadata.ino();
-            let mut already_seen = *inodes_seen.get(&inode).unwrap_or(&0);
-
-            let entry_mod = process_file(
-                handlers,
-                &mut already_seen,
-                entry.path(),
-                process_wrapper,
-                &mut stats)?;
-
-            inodes_seen.insert(inode, already_seen); // This is the orig inode
-            if entry_mod != ProcessResult::Noop {
-                // The path might have been replaced with a new inode.
-                let metadata = entry.metadata()?;
-                let inode2 = metadata.ino();
-                if inode2 != inode {
-                    // This is the new inode. We use the same set of bits in
-                    // already_seen, because those handlers have already been
-                    // applied to the contents of the new inode.
-                    inodes_seen.insert(inode2, already_seen);
-                }
-            }
+            let res = process_entry(handlers, inodes_seen, process_wrapper, &mut stats, &entry);
+            stats.add_one(ProcessResult::convert_and_warn(entry.path(), res));
         }
 
     Ok(stats)
