@@ -10,6 +10,7 @@ use log::{debug, info, warn};
 use serde::{Serialize, Deserialize};
 use std::ascii::escape_default;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::fs::{File, Metadata};
 use std::io::{self, BufReader};
@@ -325,6 +326,12 @@ pub fn process_file_or_dir(
 
             debug!("Looking at {}…", entry.path().display());
 
+            let name = unwrap_os_string(entry.file_name())?;
+            if name.starts_with(".#.") && name.ends_with(".tmp") {
+                // This is our own temporary file. Ignore it.
+                continue;
+            }
+
             let metadata = entry.metadata()?;
 
             if metadata.is_dir() {
@@ -388,6 +395,15 @@ impl<'a> Drop for InputOutputHelper<'a> {
     }
 }
 
+fn unwrap_os_string(filename: &OsStr) -> Result<&str> {
+    match filename.to_str() {
+        Some(s) => Ok(s),
+        None => {
+            bail!("Invalid file name {:?}", filename);
+        }
+    }
+}
+
 impl<'a> InputOutputHelper<'a> {
     pub fn open(input_path: &'a Path, check: bool) -> Result<(Self, BufReader<File>)> {
 
@@ -415,13 +431,7 @@ impl<'a> InputOutputHelper<'a> {
         // TODO: if .check, open a null sink here?
         // We'd avoid some IO and also not require the output path to be writable.
 
-        let input_file_name = match self.input_path.file_name().unwrap().to_str() {
-            Some(name) => name,
-            None => {
-                bail!("Invalid file name {:?}", self.input_path);
-            }
-        };
-
+        let input_file_name = unwrap_os_string(self.input_path.file_name().unwrap())?;
         let output_path = self.input_path.with_file_name(format!(".#.{}.tmp", input_file_name));
 
         let mut openopts = File::options();
