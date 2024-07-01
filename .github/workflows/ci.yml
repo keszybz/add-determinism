@@ -40,6 +40,23 @@ jobs:
         run: cargo check --release --verbose
       - name: Run tests
         run: cargo test --release --verbose
+      # Do a tests with and without -j, because the internal modes of operation are quite different
+      - name: Simulate package processing without -j
+        if: ${{ matrix.rust == 'nightly' }}
+        run: |
+          mkdir /var/tmp/buildroot-1
+          cp -a tests/cases /var/tmp/buildroot-1
+          RPM_BUILD_ROOT=/var/tmp/buildroot-1 target/release/add-determinism --brp /var/tmp/buildroot-1/ --handler=-pyc
+      - name: Simulate package processing with -j
+        if: ${{ matrix.rust == 'stable' }}
+        run: |
+          mkdir /var/tmp/buildroot-2
+          cp -a tests/cases /var/tmp/buildroot-2
+          RPM_BUILD_ROOT=/var/tmp/buildroot-2 target/release/add-determinism -j4 --brp /var/tmp/buildroot-2
+      - name: Simulate package processing with --check
+        if: ${{ matrix.rust == 'stable' }}
+        run: |
+          RPM_BUILD_ROOT=/var/tmp/buildroot-2 target/release/add-determinism -j4 --brp /var/tmp/buildroot-2 --check
 
   clippy:
     name: clippy
