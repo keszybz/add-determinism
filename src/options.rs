@@ -3,10 +3,11 @@
 use anyhow::{anyhow, Result};
 use chrono::{TimeZone, Utc};
 use clap::Parser;
-use log::{debug, info, LevelFilter};
+use log::{debug, info, log, warn, Level, LevelFilter};
 use std::env;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
+use std::time;
 
 use crate::handlers;
 use crate::simplelog;
@@ -149,18 +150,29 @@ impl Config {
 
         // $SOURCE_DATE_EPOCH
 
-        let source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
+        let mut source_date_epoch = match env::var("SOURCE_DATE_EPOCH") {
             Ok(val) => Some(val.parse::<i64>()?),
             Err(_) => None,
         };
 
-        match source_date_epoch {
-            None => debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)"),
-            Some(v) => {
-                debug!("SOURCE_DATE_EPOCH timestamp: {} ({})",
-                       v,
-                       Utc.timestamp_opt(v, 0).unwrap());
-            },
+        if let Some(v) = source_date_epoch {
+            let now = time::SystemTime::now();
+            let now_sec = now.duration_since(time::UNIX_EPOCH).unwrap().as_secs();
+
+            let neg = v < 0;
+            let pos = v > 0 && v as u64 > now_sec;
+
+            log!(if neg || pos { Level::Warn } else { Level::Debug },
+                 "SOURCE_DATE_EPOCH timestamp: {v} ({})",
+                 Utc.timestamp_opt(v, 0).unwrap());
+            if neg {
+                warn!("SOURCE_DATE_EPOCH timestamp is negative, ignoring: {v}");
+                source_date_epoch = None;
+            } else if pos {
+                warn!("SOURCE_DATE_EPOCH timestamp is in the future: {v} > {now_sec}");
+            }
+        } else {
+            debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)");
         }
 
         Ok(Some(Self {
