@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_filter_html() {
-        let cfg = Rc::new(options::Config::empty(1704106800, false));
+        let cfg = Rc::new(options::Config::empty(1704106800, false, false));
         let h = Javadoc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/page.html")).unwrap());
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_process_line() {
-        let config = Rc::new(options::Config::empty(1704106800, false));
+        let config = Rc::new(options::Config::empty(1704106800, false, false));
         let h = Javadoc { config };
         let plu = |s| h.process_line(s).unwrap();
 

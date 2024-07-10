@@ -14,7 +14,7 @@ use super::{prepare_dir, make_handler, test_corpus_file};
 fn test_libempty() {
     let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
-    let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
+    let ar = make_handler(111, false, false, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 
@@ -32,7 +32,7 @@ fn test_libempty() {
 fn test_testrelro() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111, false));
+    let cfg = Rc::new(options::Config::empty(111, false, false));
     let ar = ar::Ar::boxed(&cfg);
 
     assert!(ar.filter(&*input).unwrap());
@@ -52,7 +52,7 @@ fn test_testrelro() {
 fn test_testrelro_check() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111, true));
+    let cfg = Rc::new(options::Config::empty(111, true, false));
     let ar = ar::Ar::boxed(&cfg);
 
     assert!(ar.filter(&*input).unwrap());
@@ -71,7 +71,7 @@ fn test_testrelro_check() {
 fn test_testrelro_hardlinked() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
+    let ar = make_handler(111, false, false, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 
@@ -91,7 +91,7 @@ fn test_testrelro_hardlinked() {
 fn test_testrelro_hardlinked_check() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let ar = make_handler(111, true, ar::Ar::boxed).unwrap();
+    let ar = make_handler(111, true, false, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 
@@ -111,7 +111,7 @@ fn test_testrelro_hardlinked_check() {
 fn test_testrelro_c() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.c").unwrap();
 
-    let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
+    let ar = make_handler(111, false, false, ar::Ar::boxed).unwrap();
 
     assert!(!ar.filter(&*input).unwrap());
 
@@ -129,7 +129,7 @@ fn test_testrelro_c() {
 fn test_testrelro_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.fixed.a").unwrap();
 
-    let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
+    let ar = make_handler(111, false, false, ar::Ar::boxed).unwrap();
 
     assert!(ar.filter(&*input).unwrap());
 
@@ -151,6 +151,6 @@ fn test_libhsbase_compat_batteries() {
 
     let filename = "tests/cases/libHSbase-compat-batteries-0.12.3-EvvecFThiaEAGWq5U5Tpi9.a";
 
-    let ar = make_handler(1717842014, false, ar::Ar::boxed).unwrap();
+    let ar = make_handler(1717842014, false, false, ar::Ar::boxed).unwrap();
     test_corpus_file(ar, filename);
 }

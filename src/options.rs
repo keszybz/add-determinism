@@ -58,6 +58,10 @@ struct Options {
           num_args = 0..=1,
           default_missing_value = "0")]
     pub jobs: Option<u32>,
+
+    /// Remove mtime from pyc files
+    #[arg(short, long)]
+    pub reset_m_time: bool,
 }
 
 pub struct Config {
@@ -71,6 +75,7 @@ pub struct Config {
     pub source_date_epoch: Option<i64>,
     pub handler_names: Vec<&'static str>,
     pub strict_handlers: bool,
+    pub reset_m_time: bool,
 }
 
 fn filter_by_name(name: &str, filter: &[&str]) -> bool {
@@ -186,12 +191,13 @@ impl Config {
             source_date_epoch,
             handler_names,
             strict_handlers,
+            reset_m_time: options.reset_m_time,
         }))
     }
 
     #[allow(dead_code)]
     // FIXME: should this be marked as #[cfg(test)]? But then the tests don't compile.
-    pub const fn empty(source_date_epoch: i64, check: bool) -> Self {
+    pub const fn empty(source_date_epoch: i64, check: bool, reset_mtime: bool) -> Self {
         Self {
             inputs: vec![],
             brp: false,
@@ -203,6 +209,7 @@ impl Config {
             source_date_epoch: Some(source_date_epoch),
             handler_names: vec![],
             strict_handlers: false,
+            reset_m_time: reset_mtime,
         }
     }
 }

@@ -700,7 +700,27 @@ impl PycParser {
         assert_eq!(data == self.data, removed_count == 0);
         Ok((removed_count > 0, data))
     }
+    
+    fn clear_mtime(&mut self) -> Result<(bool, Vec<u8>)> {
+        //The first version supporting PEP 552 is Python 3.7
+        let mut cloned = self.data.clone();
+        let mut has_been_modified = false;
+        if self.version >= (3, 7) {
+            let invalidation = [self.data[4], self.data[5], self.data[6], self.data[7]];
+            if invalidation == [0, 0, 0, 0] {
+                cloned[8..12].fill(0);
+                has_been_modified = true;
+            }
+        } else {
+            cloned[4..8].fill(0);
+            has_been_modified = true;
+        }
+
+        return Ok((has_been_modified, cloned));
+    }
+
 }
+
 
 impl super::Processor for Pyc {
     fn name(&self) -> &str {
@@ -713,21 +733,29 @@ impl super::Processor for Pyc {
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
-
+        
         let mut parser = PycParser::from_file(input_path, input)?;
         if parser.version < (3, 0) {
             return Ok(super::ProcessResult::Noop);  // We don't want to touch python2 files
         }
-
+        
         parser.read_object()?;
 
         let (have_mod, data) = parser.clear_unused_flag_refs()?;
-        if have_mod {
-            io.open_output()?;
-            io.output.as_mut().unwrap().write_all(&data)?;
+        parser.data = data;
+        
+        let mut have_mod2 = false;
+        let mut data2 = parser.data.clone();
+        if self.config.reset_m_time {
+            (have_mod2, data2) = parser.clear_mtime()?;
         }
 
-        io.finalize(have_mod)
+        let has_been_modified = have_mod || have_mod2;
+        if has_been_modified {
+            io.open_output()?;
+            io.output.as_mut().unwrap().write_all(&data2)?;
+        }
+        io.finalize(has_been_modified)
     }
 }
 
@@ -737,7 +765,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(options::Config::empty(0, false));
+        let cfg = Rc::new(options::Config::empty(0, false, false));
         let h = Pyc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/foobar.pyc")).unwrap());
