@@ -382,14 +382,55 @@ impl PycParser {
         let mut data = Vec::from(&buf);
         input.read_to_end(&mut data)?;
 
-        Ok(PycParser {
+        if data.len() < header_length {
+            return Err(super::Error::Other(
+                format!("pyc file is too short ({} < {})", data.len(), header_length)
+            ).into());
+        }
+
+        let pyc = PycParser {
             input_path: input_path.to_path_buf(),
             version,
             data,
             read_offset: header_length,
             irefs: Vec::new(),
             flag_refs: Vec::new(),
-        })
+        };
+
+        let mtime = pyc.py_content_mtime();
+        debug!("{}: from py with mtime={} ({}), size={} bytes, {}",
+               input_path.display(),
+               mtime,
+               chrono::DateTime::from_timestamp(mtime as i64, 0).unwrap(),
+               pyc.py_content_size(),
+               match pyc.py_content_hash() {
+                   None | Some(0) => "no hash invalidation".to_string(),
+                   Some(hash) => format!("hash={hash}"),
+               }
+        );
+
+        Ok(pyc)
+    }
+
+    pub fn py_content_hash(&self) -> Option<u32> {
+        if self.version < (3, 7) { // The first version supporting PEP 552
+            None
+        } else {
+            match self._read_long_at(4) {
+                0 => None,  // Let's always map 0 to None.
+                v => Some(v),
+            }
+        }
+    }
+
+    pub fn py_content_mtime(&self) -> u32 {
+        let offset = if self.version < (3, 7) { 4 } else { 8 };
+        self._read_long_at(offset)
+    }
+
+    pub fn py_content_size(&self) -> u32 {
+        let offset = if self.version < (3, 7) { 8 } else { 12 };
+        self._read_long_at(offset)
     }
 
     fn take(&mut self, count: usize) -> Result<usize> {
@@ -530,10 +571,14 @@ impl PycParser {
         })
     }
 
+    fn _read_long_at(&self, offset: usize) -> u32 {
+        let bytes = &self.data[offset .. offset + 4];
+        u32::from_le_bytes(bytes.try_into().unwrap())
+    }
+
     fn _read_long(&mut self) -> Result<u32> {
         let offset = self.take(4)?;
-        let bytes = &self.data[offset .. offset + 4];
-        Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
+        Ok(self._read_long_at(offset))
     }
 
     fn _read_long_signed(&mut self) -> Result<i32> {

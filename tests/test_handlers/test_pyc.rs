@@ -11,7 +11,7 @@ use add_determinism::handlers::pyc;
 use super::{prepare_dir, make_handler, test_corpus_file};
 
 #[test]
-fn test_pyc_python_version() {
+fn test_pyc_header() {
     for p in [
         "tests/cases/adapters.cpython-312.pyc",
         "tests/cases/adapters.cpython-312.opt-1.pyc",
@@ -21,7 +21,32 @@ fn test_pyc_python_version() {
 
         let parser = pyc::PycParser::from_file(p, File::open(p).unwrap()).unwrap();
         assert_eq!(parser.version, (3, 12));
+        assert_eq!(parser.py_content_hash(), None);
+        assert_eq!(parser.py_content_mtime(), 1710422792);
+        assert_eq!(parser.py_content_size(), 16602);
     }
+}
+
+#[test]
+fn test_pyc_header_mtime_36() {
+    let p = Path::new("tests/cases/adapters.cpython-36~mtime.pyc");
+
+    let parser = pyc::PycParser::from_file(p, File::open(p).unwrap()).unwrap();
+    assert_eq!(parser.version, (3, 6));
+    assert_eq!(parser.py_content_hash(), None);
+    assert_eq!(parser.py_content_mtime(), 1720707393);
+    assert_eq!(parser.py_content_size(), 21);
+}
+
+#[test]
+fn test_pyc_header_mtime_311() {
+    let p = Path::new("tests/cases/adapters.cpython-311~mtime.pyc");
+
+    let parser = pyc::PycParser::from_file(p, File::open(p).unwrap()).unwrap();
+    assert_eq!(parser.version, (3, 11));
+    assert_eq!(parser.py_content_hash(), None);
+    assert_eq!(parser.py_content_mtime(), 1720707393);
+    assert_eq!(parser.py_content_size(), 21);
 }
 
 #[test]
