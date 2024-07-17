@@ -296,16 +296,6 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     }
 }
 
-pub struct Pyc {
-    config: Rc<options::Config>,
-}
-
-impl Pyc {
-    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self { config: config.clone() })
-    }
-}
-
 #[derive(Debug)]
 #[allow(dead_code)]   // Right now, we only use dbg! to print the object.
 enum Object {
@@ -697,7 +687,7 @@ impl PycParser {
         Ok(Object::Dict(dict))
     }
 
-    fn clear_unused_flag_refs(&mut self) -> Result<(bool, Vec<u8>)> {
+    fn clear_unused_flag_refs(&mut self) -> Result<bool> {
         // Sequence of flag_refs and irefs ordered by number of byte in a file
         let final_list =
             iter::zip(self.flag_refs.iter(), iter::repeat(true))
@@ -743,7 +733,22 @@ impl PycParser {
 
         debug!("{}: removed {} unused FLAG_REFs", self.input_path.display(), removed_count);
         assert_eq!(data == self.data, removed_count == 0);
-        Ok((removed_count > 0, data))
+        if removed_count > 0 {
+            self.data = data;
+        }
+
+        Ok(removed_count > 0)
+    }
+}
+
+
+pub struct Pyc {
+    config: Rc<options::Config>,
+}
+
+impl Pyc {
+    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+        Box::new(Self { config: config.clone() })
     }
 }
 
@@ -766,10 +771,10 @@ impl super::Processor for Pyc {
 
         parser.read_object()?;
 
-        let (have_mod, data) = parser.clear_unused_flag_refs()?;
+        let have_mod = parser.clear_unused_flag_refs()?;
         if have_mod {
             io.open_output()?;
-            io.output.as_mut().unwrap().write_all(&data)?;
+            io.output.as_mut().unwrap().write_all(&parser.data)?;
         }
 
         io.finalize(have_mod)
