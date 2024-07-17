@@ -1,17 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::debug;
+use std::fs::File;
+use std::io;
 use std::io::{Read, Write};
 use std::iter;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
+use std::time;
 
 use itertools::Itertools;
 use num_bigint_dig::{BigInt, ToBigInt};
 
-use crate::handlers::InputOutputHelper;
+use crate::handlers::{InputOutputHelper, unwrap_os_string};
 use crate::options;
 
 const PYC_MAGIC: &[u8] = &[0x0D, 0x0A];
@@ -739,6 +742,20 @@ impl PycParser {
 
         Ok(removed_count > 0)
     }
+
+    fn set_zero_mtime(&mut self) -> Result<bool> {
+        // Set the embedded mtime timestamp of the source .py file to 0 in the header.
+
+        if self.py_content_mtime() == 0 {
+            return Ok(false);
+        }
+
+        let offset = if self.version < (3, 7) { 4 } else { 8 };
+        self.data[offset..offset+4].fill(0);
+        assert!(self.py_content_mtime() == 0);
+
+        Ok(true)
+    }
 }
 
 
@@ -780,6 +797,81 @@ impl super::Processor for Pyc {
         io.finalize(have_mod)
     }
 }
+
+
+pub struct PycZeroMtime {
+    config: Rc<options::Config>,
+}
+
+impl PycZeroMtime {
+    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+        Box::new(Self { config: config.clone() })
+    }
+
+    fn set_zero_mtime_on_py_file(&self, input_path: &Path) -> Result<()> {
+        let input_file_name = unwrap_os_string(input_path.file_name().unwrap())?;
+        let base = input_file_name.split('.').nth(0).unwrap();
+        let py_path = input_path.with_file_name(format!("{base}.py"));
+        debug!("Looking at {}…", py_path.display());
+
+        let py_file = match File::open(&py_path) {
+            Ok(some) => some,
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    debug!("{}: not found, ignoring", py_path.display());
+                    return Ok(());
+                } else {
+                    bail!("{}: cannot open: {}", py_path.display(), e);
+                }
+            }
+        };
+
+        let orig = py_file.metadata()?;
+        if !orig.file_type().is_file() {
+            debug!("{}: not a file, ignoring", py_path.display());
+        } else if orig.modified()? == time::UNIX_EPOCH {
+            debug!("{}: mtime is already 0", py_path.display());
+        } else if self.config.check {
+            debug!("{}: not touching mtime in --check mode", py_path.display());
+        } else {
+            py_file.set_modified(time::UNIX_EPOCH)?;
+            debug!("{}: mtime set to 0", py_path.display());
+        }
+
+        Ok(())
+    }
+}
+
+impl super::Processor for PycZeroMtime {
+    fn name(&self) -> &str {
+        "pyc-zero-mtime"
+    }
+
+    fn filter(&self, path: &Path) -> Result<bool> {
+        Ok(path.extension().is_some_and(|x| x == "pyc"))
+    }
+
+    fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
+
+        let mut parser = PycParser::from_file(input_path, input)?;
+        let have_mod = parser.set_zero_mtime()?;
+
+        if have_mod {
+            io.open_output()?;
+            io.output.as_mut().unwrap().write_all(&parser.data)?;
+        }
+
+        let res = io.finalize(have_mod)?;
+
+        if have_mod {
+            self.set_zero_mtime_on_py_file(input_path)?;
+        }
+
+        Ok(res)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

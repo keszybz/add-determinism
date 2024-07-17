@@ -1,6 +1,7 @@
 mod test_ar;
 mod test_javadoc;
 mod test_pyc;
+mod test_pyc_zero_mtime;
 
 use anyhow::Result;
 use std::fs;
