@@ -176,23 +176,24 @@ impl Stats {
 
 pub type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
 
-pub const HANDLERS: &[(&str, HandlerBoxed)] = &[
-    ("ar",      ar::Ar::boxed),
-    ("jar",     jar::Jar::boxed),
-    ("javadoc", javadoc::Javadoc::boxed),
-    ("pyc",     pyc::Pyc::boxed),
+pub const HANDLERS: &[(&str, bool, HandlerBoxed)] = &[
+    ("ar",             true,  ar::Ar::boxed           ),
+    ("jar",            true,  jar::Jar::boxed         ),
+    ("javadoc",        true,  javadoc::Javadoc::boxed ),
+    ("pyc",            true,  pyc::Pyc::boxed         ),
+    ("pyc-zero-mtime", false, pyc::PycZeroMtime::boxed),
 ];
 
 pub fn handler_names() -> Vec<&'static str> {
     HANDLERS.iter()
-        .map(|(name, _)| *name)
+        .map(|(name, _, _)| *name)
         .collect()
 }
 
 pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Processor>>> {
     let mut handlers: Vec<Box<dyn Processor>> = vec![];
 
-    for (name, func) in HANDLERS {
+    for (name, _, func) in HANDLERS {
         if config.handler_names.contains(name) {
             let mut handler = func(config);
             match handler.initialize() {

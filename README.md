@@ -87,6 +87,20 @@ and cleans up unused "flag references".
 It is a Rust reimplementation of
 the [MarshalParser Python module](https://github.com/fedora-python/marshalparser).
 
+### `pyc-zero-mtime`
+
+Accepts `*.pyc`.
+
+This handler sets the internal timestamp in `.pyc` file header to 0,
+and sets the mtime on the corresponding source `.py` file to 0.
+This is intended to be used on [OSTree](https://github.com/ostreedev/ostree)
+systems where mtimes are discarded,
+causing a mismatch between the timestamp embedded in the `.pyc` file
+and the filesystem metadata of the `.py` file.
+
+This handler is not enabled by default and must be explicitly requested
+via `--handlers pyc-zero-mtime`.
+
 ## Notes
 
 This project is inspired by
