@@ -193,19 +193,12 @@ impl Controller {
         let mut total = handlers::Stats::new();
 
         for input_path in &config.inputs {
-            match handlers::process_file_or_dir(
+            let stats = handlers::process_file_or_dir(
                 &control.handlers,
                 &mut inodes_seen,
                 input_path,
-                Some(&|selected_handlers, input_path| control.send_job(selected_handlers, input_path)))
-            {
-                Err(err) => {
-                    warn!("{}: failed to process: {}", input_path.display(), err);
-                }
-                Ok(stats) => {
-                    total.add(&stats);
-                }
-            };
+                Some(&|selected_handlers, input_path| control.send_job(selected_handlers, input_path)));
+            total.add(&stats);
         }
 
         control.close()?;
