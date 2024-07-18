@@ -90,20 +90,20 @@ fn test_inode_map() {
     let mut handlers = vec![ Trivial::boxed() ];
     let mut cache = handlers::inodes_seen();
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
+    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None);
     assert_eq!(mods, stats(1, 1, 0));
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
+    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None);
     assert_eq!(mods, stats(0, 0, 0));
 
     assert_eq!(cache.len(), 1);
 
     handlers.push(Trivial::boxed());
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
+    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None);
     assert_eq!(mods, stats(1, 1, 0));
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
+    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None);
     assert_eq!(mods, stats(0, 0, 0));
 
     assert_eq!(cache.len(), 1);
@@ -119,10 +119,10 @@ fn test_inode_map_2() {
     let handlers = vec![ar];
     let mut cache = handlers::inodes_seen();
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
+    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None);
     assert_eq!(mods, stats(1, 1, 0));
 
-    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None).unwrap();
+    let mods = handlers::process_file_or_dir(&handlers, &mut cache, dir.path(), None);
     // The file was already processed, so no change
     assert_eq!(mods, stats(0, 0, 0));
 

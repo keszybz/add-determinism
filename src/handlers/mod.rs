@@ -224,7 +224,7 @@ pub fn do_normal_work(config: &Rc<options::Config>) -> Result<Stats> {
     let mut total = Stats::new();
 
     for input_path in &config.inputs {
-        let stats = process_file_or_dir(&handlers, &mut inodes_seen, input_path, None)?;
+        let stats = process_file_or_dir(&handlers, &mut inodes_seen, input_path, None);
         total.add(&stats);
     }
 
@@ -340,22 +340,14 @@ pub fn process_file_or_dir(
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
     process_wrapper: ProcessWrapper,
-) -> Result<Stats> {
+) -> Stats {
 
-    let mut first = true; // WalkDir doesn't allow handling the original argument
-                          // differently from any subdirectories, but we want to return
-                          // an error if the specified path is missing or inaccessible,
-                          // so keep a flag to tell us if we're looking at the first
-                          // entry.
     let mut stats = Stats::new();
 
     for entry in walkdir::WalkDir::new(input_path)
         .follow_links(false)
         .into_iter() {
             let entry = match entry {
-                Err(e) if first => {
-                    return Err(e.into());
-                }
                 Err(e) => {
                     warn!("Failed to process: {e}");
                     stats.errors += 1;
@@ -363,13 +355,12 @@ pub fn process_file_or_dir(
                 }
                 Ok(entry) => entry
             };
-            first = false;
 
             let res = process_entry(handlers, inodes_seen, process_wrapper, &mut stats, &entry);
             stats.add_one(ProcessResult::convert_and_warn(entry.path(), res));
         }
 
-    Ok(stats)
+    stats
 }
 
 pub struct InputOutputHelper<'a> {
