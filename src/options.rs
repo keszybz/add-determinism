@@ -73,7 +73,7 @@ pub struct Config {
     pub strict_handlers: bool,
 }
 
-fn filter_by_name(name: &str, filter: &[&str]) -> bool {
+fn filter_by_name(name: &str, enabled_by_default: bool, filter: &[&str]) -> bool {
     let mut negative_filter = true;
 
     for f in filter.iter().rev() {
@@ -90,7 +90,7 @@ fn filter_by_name(name: &str, filter: &[&str]) -> bool {
         }
     }
 
-    negative_filter
+    enabled_by_default && negative_filter
 }
 
 pub fn requested_handlers(filter: &[&str]) -> Result<(Vec<&'static str>, bool)> {
@@ -109,8 +109,8 @@ pub fn requested_handlers(filter: &[&str]) -> Result<(Vec<&'static str>, bool)> 
 
     let list: Vec<&'static str> = handlers::HANDLERS
         .iter()
-        .filter(|(name, _)| filter_by_name(name, filter))
-        .map(|(name, _)| *name)
+        .filter(|(name, enabled_by_default, _)| filter_by_name(name, *enabled_by_default, filter))
+        .map(|(name, _, _)| *name)
         .collect();
 
     if list.is_empty() {
@@ -213,10 +213,31 @@ mod tests {
 
     #[test]
     fn test_filter_by_name() {
-        assert_eq!(filter_by_name("x", &vec!["x", "y"]), true);
-        assert_eq!(filter_by_name("x", &vec!["x"]), true);
-        assert_eq!(filter_by_name("x", &vec![]), true);
-        assert_eq!(filter_by_name("x", &vec!["-x"]), false);
-        assert_eq!(filter_by_name("x", &vec!["-y"]), true);
+        assert_eq!(filter_by_name("x", true, &vec!["x", "y"]), true);
+        assert_eq!(filter_by_name("x", true, &vec!["x"]), true);
+        assert_eq!(filter_by_name("x", true, &vec![]), true);
+        assert_eq!(filter_by_name("x", true, &vec!["-x"]), false);
+        assert_eq!(filter_by_name("x", true, &vec!["-y"]), true);
+
+        assert_eq!(filter_by_name("x", false, &vec!["x", "y"]), true);
+        assert_eq!(filter_by_name("x", false, &vec!["x"]), true);
+        assert_eq!(filter_by_name("x", false, &vec![]), false);
+        assert_eq!(filter_by_name("x", false, &vec!["-x"]), false);
+        assert_eq!(filter_by_name("x", false, &vec!["-y"]), false);
+    }
+
+    #[test]
+    fn test_requested_handlers() {
+        let (list, strict) = requested_handlers(&vec![]).unwrap();
+        assert_eq!(list, vec!["ar", "jar", "javadoc", "pyc"]);
+        assert_eq!(strict, false);
+
+        let (list, strict) = requested_handlers(&vec!["ar", "pyc-zero-mtime"]).unwrap();
+        assert_eq!(list, vec!["ar", "pyc-zero-mtime"]);
+        assert_eq!(strict, true);
+
+        let (list, strict) = requested_handlers(&vec!["-pyc-zero-mtime"]).unwrap();
+        assert_eq!(list, vec!["ar", "jar", "javadoc", "pyc"]);
+        assert_eq!(strict, true);
     }
 }
