@@ -78,6 +78,19 @@ fn test_invocation_j2() {
 }
 
 #[test]
+fn test_invocation_j() {
+    let (dir, _input) = prepare_dir("tests/cases/testrelro.a").unwrap();
+
+    let c = invoke([dir.path().to_str().unwrap(), "-j"]);
+    assert!(c.status.success());
+    assert!(c.stderr.is_empty());
+
+    let s = std::str::from_utf8(&c.stdout).unwrap();
+    assert!(s.contains("Scanned 1 directories and 1 files,"));
+    assert!(s.contains(" 1 modified (1 replaced + 0 rewritten),"));
+}
+
+#[test]
 fn test_invocation_check() {
     let (dir, _input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 

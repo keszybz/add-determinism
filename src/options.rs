@@ -7,6 +7,7 @@ use log::{debug, info, log, warn, Level, LevelFilter};
 use std::env;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
+use std::thread;
 use std::time;
 
 use crate::handlers;
@@ -175,6 +176,14 @@ impl Config {
             debug!("SOURCE_DATE_EPOCH timestamp: {}", "(unset)");
         }
 
+        let jobs = options.jobs.map(
+            |n| if n > 0 { n } else {
+                let j = thread::available_parallelism().unwrap().get();
+                debug!("Will use {j} workers");
+                j as u32
+            }
+        );
+
         Ok(Some(Self {
             inputs: options.inputs,
             brp: options.brp,
@@ -182,7 +191,7 @@ impl Config {
             job_socket: options.job_socket,
             result_socket: options.result_socket,
             check: options.check,
-            jobs: options.jobs,
+            jobs,
             source_date_epoch,
             handler_names,
             strict_handlers,

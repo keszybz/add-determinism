@@ -92,8 +92,9 @@ impl Controller {
         )?;
 
         let n = config.jobs.unwrap();
-        let mut workers = vec![];
+        assert!(n > 0);
 
+        let mut workers = vec![];
         for _ in 0..n {
             let child = cmd.spawn()?;
             workers.push(child);
