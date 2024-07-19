@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
 mod test_ar;
 mod test_javadoc;
 mod test_pyc;

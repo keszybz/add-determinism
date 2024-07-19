@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
 mod test_handlers;
 
 use add_determinism::simplelog;
