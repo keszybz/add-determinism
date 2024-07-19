@@ -99,7 +99,7 @@ causing a mismatch between the timestamp embedded in the `.pyc` file
 and the filesystem metadata of the `.py` file.
 
 This handler is not enabled by default and must be explicitly requested
-via `--handlers pyc-zero-mtime`.
+via `--handler pyc-zero-mtime`.
 
 ## Notes
 
