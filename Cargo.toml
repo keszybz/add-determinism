@@ -1,6 +1,6 @@
 [package]
 name = "add-determinism"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 authors = ["Zbigniew Jędrzejewski-Szmek <zbyszek@in.waw.pl>"]
 homepage = "https://github.com/keszybz/add-determinism"
