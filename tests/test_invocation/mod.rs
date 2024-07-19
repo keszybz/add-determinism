@@ -18,7 +18,7 @@ fn add_det_bin() -> PathBuf {
     root.join("add-determinism")
 }
 
-fn invoke<I, S>(args: I) -> process::Output
+pub fn invoke<I, S>(args: I) -> process::Output
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
