@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
 mod test_ar;
 mod test_javadoc;
 mod test_pyc;
@@ -6,19 +8,12 @@ mod test_pyc_zero_mtime;
 use anyhow::Result;
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
-use tempfile::TempDir;
 
 use add_determinism::options;
 use add_determinism::handlers;
-
-fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {
-    let dir = TempDir::new()?;
-    let input_path = dir.path().join(Path::new(path).file_name().unwrap());
-    fs::copy(path, &input_path)?;
-    Ok((Box::new(dir), Box::new(input_path)))
-}
+use super::prepare_dir;
 
 fn make_handler(
     source_date_epoch: i64,

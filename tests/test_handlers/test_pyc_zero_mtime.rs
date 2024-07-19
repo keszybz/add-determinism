@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use std::fs::File;
+use std::fs;
 use std::os::linux::fs::MetadataExt;
 use std::time;
 
 use add_determinism::handlers;
 use add_determinism::handlers::pyc;
 
+use crate::test_invocation::invoke;
 use super::{prepare_dir, make_handler};
 
 #[test]
@@ -15,7 +16,7 @@ fn test_adapters() {
 
     // We take the lazy step of creating an empty .py file here.
     // This is enough to be able to adjust the mtime.
-    let py_file = File::options()
+    let py_file = fs::File::options()
         .read(true)
         .write(true)
         .create_new(true)
@@ -38,4 +39,45 @@ fn test_adapters() {
 
     let new2 = py_file.metadata().unwrap();
     assert_eq!(new2.modified().unwrap(), time::UNIX_EPOCH);
+}
+
+fn test_pyc_zero_mtime(parallel: bool) {
+    let (dir, _input) = prepare_dir("tests/cases/adapters.cpython-311~mtime.pyc").unwrap();
+
+    let py_file = fs::File::options()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(dir.path().join("adapters.py"))
+        .unwrap();
+
+    let mut args = vec!["--handler=pyc-zero-mtime", dir.path().to_str().unwrap(), "-v"];
+    if parallel {
+        args.push("-j40");
+    }
+
+    let c = invoke(args);
+    assert!(c.status.success());
+    assert!(c.stderr.is_empty());
+
+    let s = std::str::from_utf8(&c.stdout).unwrap();
+    assert!(s.contains("Scanned 1 directories and 2 files,"));
+    assert!(s.contains(" 1 modified (1 replaced + 0 rewritten),"));
+    // TODO: should this be "2 modified"?
+
+    assert_eq!(py_file.metadata().unwrap().modified().unwrap(), time::UNIX_EPOCH);
+
+    let expected = fs::read("tests/cases/adapters.cpython-311~mtime.pyc.fixed").unwrap();
+    let output = fs::read(dir.path().join("adapters.cpython-311~mtime.pyc")).unwrap();
+    assert_eq!(output, expected);
+}
+
+#[test]
+fn test_pyc_zero_mtime_serial() {
+    test_pyc_zero_mtime(false);
+}
+
+#[test]
+fn test_pyc_zero_mtime_parallel() {
+    test_pyc_zero_mtime(true);
 }
