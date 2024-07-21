@@ -52,7 +52,7 @@ impl handlers::Processor for Trivial {
 fn test_input_output_helper_drop() {
     let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
-    let (mut helper, _) = handlers::InputOutputHelper::open(&*input, false).unwrap();
+    let (mut helper, _) = handlers::InputOutputHelper::open(&*input, false, false).unwrap();
     helper.open_output().unwrap();
 
     let output_path = helper.output_path.as_ref().unwrap().clone();
