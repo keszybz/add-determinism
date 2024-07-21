@@ -441,7 +441,7 @@ impl<'a> InputOutputHelper<'a> {
                     bail!("{}: cannot open temporary file: {}", output_path.display(), e);
                 }
 
-                debug!("{}: stale temporary file found, removing", output_path.display());
+                info!("{}: stale temporary file found, removing", output_path.display());
                 fs::remove_file(&output_path)?;
                 openopts.open(&output_path)?
             }
