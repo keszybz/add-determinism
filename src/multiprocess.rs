@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::{bail, Result};
-use log::{debug, warn};
+use log::{debug, warn, error};
 use nix::{errno, fcntl, sys, unistd};
 use serde::{Serialize, Deserialize};
 use std::env;
@@ -181,7 +181,8 @@ impl Controller {
         }
 
         if count != self.workers.len() {
-            warn!("Got {} results from {} workers. (??)", count, self.workers.len());
+            error!("Got {} results from {} workers. (??)", count, self.workers.len());
+            total.errors += 1;
         }
 
         Ok(())
