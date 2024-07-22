@@ -85,7 +85,7 @@ impl super::Processor for Javadoc {
         let mut have_mod = false;
         let mut after_header = false;
 
-        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check, true)?;
 
         io.open_output()?;
         let mut output = BufWriter::new(io.output.as_mut().unwrap());

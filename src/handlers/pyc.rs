@@ -779,7 +779,7 @@ impl super::Processor for Pyc {
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
-        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check, true)?;
 
         let mut parser = PycParser::from_file(input_path, input)?;
         if parser.version < (3, 0) {
@@ -852,7 +852,7 @@ impl super::Processor for PycZeroMtime {
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
-        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check)?;
+        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check, false)?;
 
         let mut parser = PycParser::from_file(input_path, input)?;
         let have_mod = parser.set_zero_mtime()?;

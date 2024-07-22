@@ -6,7 +6,7 @@ pub mod javadoc;
 pub mod pyc;
 
 use anyhow::{bail, Context, Result};
-use log::{debug, info, warn};
+use log::{log, debug, info, warn, Level};
 use serde::{Serialize, Deserialize};
 use std::ascii::escape_default;
 use std::collections::HashMap;
@@ -371,6 +371,7 @@ pub struct InputOutputHelper<'a> {
     pub output: Option<File>,
 
     pub check: bool,
+    pub verbose: bool,  // include logging about each modified file
 }
 
 impl<'a> Drop for InputOutputHelper<'a> {
@@ -396,7 +397,11 @@ fn unwrap_os_string(filename: &OsStr) -> Result<&str> {
 }
 
 impl<'a> InputOutputHelper<'a> {
-    pub fn open(input_path: &'a Path, check: bool) -> Result<(Self, BufReader<File>)> {
+    pub fn open(
+        input_path: &'a Path,
+        check: bool,
+        verbose: bool,
+    ) -> Result<(Self, BufReader<File>)> {
 
         let input = File::open(input_path)
             .with_context(|| format!("Cannot open {:?}", input_path))?;
@@ -410,6 +415,7 @@ impl<'a> InputOutputHelper<'a> {
             output_path: None,
             output: None,
             check,
+            verbose,
         };
 
         Ok((io, input))
@@ -435,7 +441,7 @@ impl<'a> InputOutputHelper<'a> {
                     bail!("{}: cannot open temporary file: {}", output_path.display(), e);
                 }
 
-                debug!("{}: stale temporary file found, removing", output_path.display());
+                info!("{}: stale temporary file found, removing", output_path.display());
                 fs::remove_file(&output_path)?;
                 openopts.open(&output_path)?
             }
@@ -474,7 +480,8 @@ impl<'a> InputOutputHelper<'a> {
             // If it has multiple links, we reopen the orignal file and rewrite it.
             // This way the inode number is retained and hard links are not broken.
             if meta.nlink() == 1 {
-                info!("{}: replacing with normalized version", self.input_path.display());
+                log!(if self.verbose { Level::Info } else { Level::Debug },
+                     "{}: replacing with normalized version", self.input_path.display());
 
                 if !self.check {
                     output.set_permissions(meta.permissions())?;
@@ -495,7 +502,8 @@ impl<'a> InputOutputHelper<'a> {
                 Ok(ProcessResult::Replaced)
 
             } else {
-                info!("{}: rewriting with normalized contents", self.input_path.display());
+                log!(if self.verbose { Level::Info } else { Level::Debug },
+                     "{}: rewriting with normalized contents", self.input_path.display());
 
                 if !self.check {
                     output.seek(io::SeekFrom::Start(0))?;
