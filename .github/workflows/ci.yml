@@ -43,7 +43,7 @@ jobs:
         #     previously was ok with rustc 1.81.0-nightly (fcc325f1b 2024-07-17)
         # Initialized logging with log level DEBUG
         # fatal runtime error: thread::set_current should only be called once per thread
-        if: ${{ matrix.rust != 'nightly' }}
+        if: ${{ matrix.rust == 'stable' }}
         run: cargo test --release --verbose
 
       # Do a tests with and without -j, because the internal modes of operation are quite different
