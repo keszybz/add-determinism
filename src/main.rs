@@ -11,7 +11,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-fn brp_check(config: &options::Config) -> Result<()> {
+fn brp_check(config: &options::Config, build_root: Option<String>) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
     // the target binary, so we cannot use that.
 
@@ -20,8 +20,11 @@ fn brp_check(config: &options::Config) -> Result<()> {
     debug!("Running as {arg0}… (brp={})", if config.brp { "true" } else { "false" });
 
     if config.brp {
-        let build_root = env::var("RPM_BUILD_ROOT")
-            .map_err(|e| anyhow!("$RPM_BUILD_ROOT is not set correctly: {e}"))?;
+        let build_root = build_root.map_or_else(
+            || env::var("RPM_BUILD_ROOT")
+                .map_err(|e| anyhow!("$RPM_BUILD_ROOT is not set correctly: {e}")),
+            Ok,
+        )?;
 
         if build_root.is_empty() {
             bail!("Empty $RPM_BUILD_ROOT is not allowed");
@@ -52,7 +55,7 @@ fn main() -> Result<()> {
     };
     let config = Rc::new(config);
 
-    brp_check(&config)?;
+    brp_check(&config, None)?;
 
     let stats;
 
@@ -82,5 +85,26 @@ fn main() -> Result<()> {
         bail!("--check was specified, but some files would have been modified")
     }  else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_brp_check() {
+        let mut config = options::Config::empty(111, false);
+        config.brp = true;
+        config.inputs.push("/var/tmp/foo/bar".into());
+        config.inputs.push("/var/tmp/foo/./bar".into());
+        // Sic, this is allowed.
+        config.inputs.push("/var/tmp/foo/./bar/../asdf".into());
+        config.inputs.push("/var/tmp/foo/./bar/../../../asdf".into());
+
+        assert!(brp_check(&config, Some("".to_string())).is_err());
+        assert!(brp_check(&config, Some("///.///".to_string())).is_err());
+        assert!(brp_check(&config, Some("/var/tmp/foo2".to_string())).is_err());
+        assert!(brp_check(&config, Some("/var/tmp/foo///./".to_string())).is_ok());
     }
 }
