@@ -21,7 +21,7 @@ fn brp_check(config: &options::Config) -> Result<()> {
 
     if config.brp {
         let build_root = env::var("RPM_BUILD_ROOT")
-            .map_err(|_| anyhow!("$RPM_BUILD_ROOT variable is not defined"))?;
+            .map_err(|e| anyhow!("$RPM_BUILD_ROOT is not set correctly: {e}"))?;
 
         if build_root.is_empty() {
             bail!("Empty $RPM_BUILD_ROOT is not allowed");
