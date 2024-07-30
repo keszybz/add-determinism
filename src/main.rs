@@ -8,7 +8,7 @@ mod simplelog;
 use anyhow::{anyhow, bail, Result};
 use log::debug;
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 fn brp_check(config: &options::Config) -> Result<()> {
@@ -27,17 +27,17 @@ fn brp_check(config: &options::Config) -> Result<()> {
             bail!("Empty $RPM_BUILD_ROOT is not allowed");
         }
 
-        let build_root_path = Path::new(&build_root)
-            .canonicalize()
-            .map_err(|e| anyhow!("Cannot canonicalize RPM_BUILD_ROOT={build_root:?}: {e}"))?;
+        // Canonicalize the path, removing duplicate or trailing slashes
+        // and intermediate dot components, but not double dots.
+        let build_root = PathBuf::from_iter(Path::new(&build_root).iter());
 
-        if build_root_path == Path::new("/") {
+        if build_root == Path::new("/") {
             bail!("RPM_BUILD_ROOT={build_root:?} is not allowed");
         }
 
         for arg in &config.inputs {
-            if !arg.starts_with(&build_root_path) {
-                bail!("Path {arg:?} is outside of RPM_BUILD_ROOT={build_root:?}");
+            if !arg.starts_with(&build_root) {
+                bail!("Path {arg:?} does not start with RPM_BUILD_ROOT={build_root:?}");
             }
         }
     }
