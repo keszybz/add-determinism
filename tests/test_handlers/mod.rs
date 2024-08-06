@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 mod test_ar;
+mod test_jar;
 mod test_javadoc;
 mod test_pyc;
 mod test_pyc_zero_mtime;
