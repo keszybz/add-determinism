@@ -301,34 +301,56 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
 
 #[derive(Debug)]
 #[allow(dead_code)]   // Right now, we only use dbg! to print the object.
+struct CodeObject {
+    argcount: u32,
+    posonlyargcount: Option<u32>,
+    kwonlyargcount: u32,
+    nlocals: Option<u32>,
+    stacksize: u32,
+    flags: u32,
+    code: Box<Object>,
+    consts: Box<Object>,
+    names: Box<Object>,
+    varnames: Option<Box<Object>>,
+    freevars: Option<Box<Object>>,
+    cellvars: Option<Box<Object>>,
+    localsplusnames: Option<Box<Object>>,
+    localspluskinds: Option<Box<Object>>,
+    filename: Box<Object>,
+    name: Box<Object>,
+    qualname: Option<Box<Object>>,
+    firstlineno: u32,
+    linetable: Box<Object>,
+    exceptiontable: Option<Box<Object>>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct StringObject {
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct TupleObject {
+    items: Vec<Object>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct DictObject {
+    items: Vec<(Object, Object)>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
 enum Object {
-    Code {
-        argcount: u32,
-        posonlyargcount: Option<u32>,
-        kwonlyargcount: u32,
-        nlocals: Option<u32>,
-        stacksize: u32,
-        flags: u32,
-        code: Box<Object>,
-        consts: Box<Object>,
-        names: Box<Object>,
-        varnames: Option<Box<Object>>,
-        freevars: Option<Box<Object>>,
-        cellvars: Option<Box<Object>>,
-        localsplusnames: Option<Box<Object>>,
-        localspluskinds: Option<Box<Object>>,
-        filename: Box<Object>,
-        name: Box<Object>,
-        qualname: Option<Box<Object>>,
-        firstlineno: u32,
-        linetable: Box<Object>,
-        exceptiontable: Option<Box<Object>>,
-    },
+    Code(CodeObject),
     Long(BigInt),
     Int(u32),
     Short(i32),
-    String(Vec<u8>),
-    Tuple(Vec<Object>),
+    String(StringObject),
+    Tuple(TupleObject),
     Null,
     None,
     True,
@@ -337,8 +359,8 @@ enum Object {
     Ellipsis,
     Float(f64),
     Complex(f64, f64),
-    Dict(Vec<(Object, Object)>),
-    Ref(String),
+    Dict(DictObject),
+    Ref(u32),
 }
 
 #[derive(Debug, Ord, Eq, PartialOrd, PartialEq)]
@@ -540,7 +562,7 @@ impl PycParser {
     }
 
     fn read_codeobject(&mut self) -> Result<Object> {
-        Ok(Object::Code {
+        Ok(Object::Code(CodeObject {
             argcount: self._read_long()?,
             posonlyargcount: self.maybe_read_long(self.version >= (3, 8))?,
             kwonlyargcount: self._read_long()?,
@@ -561,7 +583,7 @@ impl PycParser {
             firstlineno: self._read_long()?,
             linetable: Box::new(self.read_object()?),
             exceptiontable: self.maybe_read_object(self.version >= (3, 11))?,
-        })
+        }))
     }
 
     fn _read_long_at(&self, offset: usize) -> u32 {
@@ -614,19 +636,21 @@ impl PycParser {
         };
 
         let offset = self.take(size)?;
-        Ok(Object::String(self.data[offset .. offset + size].to_vec()))
+        Ok(Object::String(StringObject {
+            bytes: self.data[offset .. offset + size].to_vec()
+        }))
 
         // let string = str::from_utf8(&bytes)?;
         // Ok(Object::String(string.to_string()))
     }
 
     fn _read_tuple(&mut self, size: u64) -> Result<Object> {
-        let mut ans = Vec::new();
+        let mut items = Vec::new();
         for _ in 0..size {
-            ans.push(self.read_object()?);
+            items.push(self.read_object()?);
         }
 
-        Ok(Object::Tuple(ans))
+        Ok(Object::Tuple(TupleObject { items }))
     }
 
     fn read_small_tuple(&mut self) -> Result<Object> {
@@ -655,8 +679,7 @@ impl PycParser {
         self.flag_refs[index as usize].number += 1;
         self.irefs.push(Ref { offset, number: index as u64 });
 
-        let desc = format!("REF to index {}", index);
-        Ok(Object::Ref(desc))
+        Ok(Object::Ref(index))
     }
 
     fn _read_binary_float(&mut self) -> Result<f64> {
@@ -675,7 +698,7 @@ impl PycParser {
     }
 
     fn read_dict(&mut self) -> Result<Object> {
-        let mut dict = Vec::new();
+        let mut items = Vec::new();
 
         loop {
             let key = self.read_object()?;
@@ -684,10 +707,10 @@ impl PycParser {
             }
 
             let value = self.read_object()?;
-            dict.push((key, value));
+            items.push((key, value));
         }
 
-        Ok(Object::Dict(dict))
+        Ok(Object::Dict(DictObject { items } ))
     }
 
     fn clear_unused_flag_refs(&mut self) -> Result<bool> {
