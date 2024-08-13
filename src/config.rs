@@ -127,11 +127,6 @@ impl Config {
     pub fn make() -> Result<Option<Self>> {
         let options = Options::parse();
 
-        // log level
-
-        let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
-        simplelog::init_with_level(log_level)?;
-
         // handlers
 
         let handlers: Vec<&str> = options.handlers.iter().flat_map(|s| s.split(',')).collect();
@@ -140,6 +135,16 @@ impl Config {
             println!("{}", handlers::handler_names().join("\n"));
             return Ok(None);
         }
+
+        // log level
+
+        let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
+        // Prefix logs with [pid] if we have multiple workers and -v was used,
+        // which means that we expect output from various workers.
+        let show_pid = options.verbose && (
+            options.jobs.is_some() || options.job_socket.is_some()
+        );
+        simplelog::init(log_level, show_pid)?;
 
         let (handler_names, strict_handlers) = requested_handlers(&handlers)?;
 

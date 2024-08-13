@@ -12,7 +12,7 @@ use tempfile::TempDir;
 
 #[ctor::ctor]
 fn init() {
-    simplelog::init_with_level(log::LevelFilter::Debug).unwrap();
+    simplelog::init(log::LevelFilter::Debug, true).unwrap();
 }
 
 fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {

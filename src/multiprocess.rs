@@ -271,10 +271,10 @@ pub fn do_worker_work(config: &Rc<config::Config>) -> Result<()> {
         stats.add_one(res);
     }
 
-    debug!("Worker {} wrapping up...", process::id());
+    debug!("Wrapping up...");
     let buf = serde_cbor::ser::to_vec_packed(&stats)?;
     result_socket.send(&buf)?;
 
-    debug!("Worker {} says bye!", process::id());
+    debug!("Worker says bye!");
     Ok(())
 }
