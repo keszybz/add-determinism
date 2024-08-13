@@ -8,7 +8,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use crate::handlers::InputOutputHelper;
-use crate::options;
+use crate::config;
 
 const MAGIC: &[u8] = b"!<arch>\n";
 
@@ -16,11 +16,11 @@ const FILE_HEADER_LENGTH: usize = 60;
 const FILE_HEADER_MAGIC: &[u8] = &[0o140, 0o012];
 
 pub struct Ar {
-    config: Rc<options::Config>,
+    config: Rc<config::Config>,
 }
 
 impl Ar {
-    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
         Box::new(Self { config: config.clone() })
     }
 }
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(options::Config::empty(0, true));
+        let cfg = Rc::new(config::Config::empty(0, true));
         let h = Ar::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/libfoobar.a")).unwrap());

@@ -8,17 +8,17 @@ use std::path::Path;
 use std::rc::Rc;
 
 use crate::handlers::InputOutputHelper;
-use crate::options;
+use crate::config;
 
 const FILE_HEADER_MAGIC: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const CENTRAL_HEADER_FILE_MAGIC: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
 
 pub struct Jar {
-    config: Rc<options::Config>,
+    config: Rc<config::Config>,
 }
 
 impl Jar {
-    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
         Box::new(Self { config: config.clone() })
     }
 }

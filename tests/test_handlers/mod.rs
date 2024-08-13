@@ -12,7 +12,7 @@ use std::io::Read;
 use std::path::Path;
 use std::rc::Rc;
 
-use add_determinism::options;
+use add_determinism::config;
 use add_determinism::handlers;
 use super::prepare_dir;
 
@@ -22,7 +22,7 @@ fn make_handler(
     func: handlers::HandlerBoxed,
 ) -> Result<Box<dyn handlers::Processor>> {
 
-    let cfg = Rc::new(options::Config::empty(source_date_epoch, check));
+    let cfg = Rc::new(config::Config::empty(source_date_epoch, check));
     let mut handler = func(&cfg);
     handler.initialize()?;
     Ok(handler)
@@ -109,7 +109,7 @@ fn test_inode_map() {
 fn test_inode_map_2() {
     let (dir, _input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111, false));
+    let cfg = Rc::new(config::Config::empty(111, false));
     let ar = handlers::ar::Ar::boxed(&cfg);
 
     let handlers = vec![ar];

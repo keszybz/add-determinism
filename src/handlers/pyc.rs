@@ -14,8 +14,8 @@ use std::time;
 use itertools::Itertools;
 use num_bigint_dig::{BigInt, ToBigInt};
 
+use crate::config;
 use crate::handlers::{InputOutputHelper, unwrap_os_string};
-use crate::options;
 
 const PYC_MAGIC: &[u8] = &[0x0D, 0x0A];
 const PYLONG_MARSHAL_SHIFT: i32 = 15;
@@ -760,11 +760,11 @@ impl PycParser {
 
 
 pub struct Pyc {
-    config: Rc<options::Config>,
+    config: Rc<config::Config>,
 }
 
 impl Pyc {
-    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
         Box::new(Self { config: config.clone() })
     }
 }
@@ -800,11 +800,11 @@ impl super::Processor for Pyc {
 
 
 pub struct PycZeroMtime {
-    config: Rc<options::Config>,
+    config: Rc<config::Config>,
 }
 
 impl PycZeroMtime {
-    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
         Box::new(Self { config: config.clone() })
     }
 
@@ -879,7 +879,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(options::Config::empty(0, false));
+        let cfg = Rc::new(config::Config::empty(0, false));
         let h = Pyc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/foobar.pyc")).unwrap());

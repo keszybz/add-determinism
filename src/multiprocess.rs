@@ -13,8 +13,8 @@ use std::process;
 use std::rc::Rc;
 use std::str;
 
+use crate::config;
 use crate::handlers;
-use crate::options;
 
 pub struct Controller {
     handlers: Vec<Box<dyn handlers::Processor>>,
@@ -31,7 +31,7 @@ pub struct Job {
 
 impl Controller {
     fn build_worker_command(
-        config: &options::Config,
+        config: &config::Config,
         handlers: &[Box<dyn handlers::Processor>],
         job_fd: &RawFd,
         result_fd: &RawFd,
@@ -64,7 +64,7 @@ impl Controller {
         Ok(cmd)
     }
 
-    pub fn create(config: &Rc<options::Config>) -> Result<Self> {
+    pub fn create(config: &Rc<config::Config>) -> Result<Self> {
         let handlers = handlers::make_handlers(config)?;
 
         let job_sockets = sys::socket::socketpair(
@@ -188,7 +188,7 @@ impl Controller {
         Ok(())
     }
 
-    pub fn do_work(config: &Rc<options::Config>) -> Result<handlers::Stats> {
+    pub fn do_work(config: &Rc<config::Config>) -> Result<handlers::Stats> {
         let mut control = Controller::create(config)?;
 
         let mut inodes_seen = handlers::inodes_seen();
@@ -235,7 +235,7 @@ fn process_file_with_selected_handlers(
     Ok(entry_mod)
 }
 
-pub fn do_worker_work(config: &Rc<options::Config>) -> Result<()> {
+pub fn do_worker_work(config: &Rc<config::Config>) -> Result<()> {
     let job_socket = config.job_socket.unwrap();
     let job_socket = unsafe { UnixDatagram::from_raw_fd(job_socket) };
 

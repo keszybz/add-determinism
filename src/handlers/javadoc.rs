@@ -9,16 +9,16 @@ use std::path::Path;
 use std::rc::Rc;
 
 use crate::handlers::InputOutputHelper;
-use crate::options;
+use crate::config;
 
 const HEADER_LINES_TO_CHECK: i32 = 15;
 
 pub struct Javadoc {
-    config: Rc<options::Config>,
+    config: Rc<config::Config>,
 }
 
 impl Javadoc {
-    pub fn boxed(config: &Rc<options::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
         Box::new(Self { config: config.clone() })
     }
 
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_filter_html() {
-        let cfg = Rc::new(options::Config::empty(1704106800, false));
+        let cfg = Rc::new(config::Config::empty(1704106800, false));
         let h = Javadoc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/page.html")).unwrap());
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_process_line() {
-        let config = Rc::new(options::Config::empty(1704106800, false));
+        let config = Rc::new(config::Config::empty(1704106800, false));
         let h = Javadoc { config };
         let plu = |s| h.process_line(s).unwrap();
 
