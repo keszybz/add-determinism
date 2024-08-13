@@ -18,7 +18,7 @@ use crate::handlers;
 
 pub struct Controller {
     handlers: Vec<Box<dyn handlers::Processor>>,
-    job_sockets: (OwnedFd, OwnedFd),
+    job_sockets: Option<(OwnedFd, OwnedFd)>,
     result_sockets: (OwnedFd, OwnedFd),
     workers: Vec<process::Child>,
 }
@@ -102,7 +102,7 @@ impl Controller {
 
         Ok(Controller {
             handlers,
-            job_sockets,
+            job_sockets: Some(job_sockets),
             result_sockets,
             workers,
         })
@@ -120,7 +120,7 @@ impl Controller {
         let buf = serde_cbor::ser::to_vec_packed(&job)?;
 
         debug!("Sending {:?}", &job);
-        unistd::write(&self.job_sockets.1, &buf)?;
+        unistd::write(&self.job_sockets.as_ref().unwrap().1, &buf)?;
 
         Ok(())
     }
@@ -128,11 +128,11 @@ impl Controller {
     pub fn close(&mut self) -> Result<()> {
         debug!("Sending quit command to children…");
         for _ in &mut self.workers {
-            unistd::write(&self.job_sockets.1, b"")?;
+            unistd::write(&self.job_sockets.as_ref().unwrap().1, b"")?;
         }
 
         debug!("Closing control socket…");
-        unistd::close(self.job_sockets.1.as_raw_fd())?;
+        self.job_sockets.take();
 
         debug!("Waiting for children to exit…");
         for child in &mut self.workers {
