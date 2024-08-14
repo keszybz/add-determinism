@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use thiserror::Error;
 
-use crate::options;
+use crate::config;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -174,7 +174,7 @@ impl Stats {
     }
 }
 
-pub type HandlerBoxed = fn(&Rc<options::Config>) -> Box<dyn Processor>;
+pub type HandlerBoxed = fn(&Rc<config::Config>) -> Box<dyn Processor>;
 
 pub const HANDLERS: &[(&str, bool, HandlerBoxed)] = &[
     ("ar",             true,  ar::Ar::boxed           ),
@@ -190,7 +190,7 @@ pub fn handler_names() -> Vec<&'static str> {
         .collect()
 }
 
-pub fn make_handlers(config: &Rc<options::Config>) -> Result<Vec<Box<dyn Processor>>> {
+pub fn make_handlers(config: &Rc<config::Config>) -> Result<Vec<Box<dyn Processor>>> {
     let mut handlers: Vec<Box<dyn Processor>> = vec![];
 
     for (name, _, func) in HANDLERS {
@@ -218,7 +218,7 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
-pub fn do_normal_work(config: &Rc<options::Config>) -> Result<Stats> {
+pub fn do_normal_work(config: &Rc<config::Config>) -> Result<Stats> {
     let handlers = make_handlers(config)?;
     let mut inodes_seen = inodes_seen();
     let mut total = Stats::new();

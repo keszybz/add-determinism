@@ -13,12 +13,12 @@ use std::process;
 use std::rc::Rc;
 use std::str;
 
+use crate::config;
 use crate::handlers;
-use crate::options;
 
 pub struct Controller {
     handlers: Vec<Box<dyn handlers::Processor>>,
-    job_sockets: (OwnedFd, OwnedFd),
+    job_sockets: Option<(OwnedFd, OwnedFd)>,
     result_sockets: (OwnedFd, OwnedFd),
     workers: Vec<process::Child>,
 }
@@ -31,7 +31,7 @@ pub struct Job {
 
 impl Controller {
     fn build_worker_command(
-        config: &options::Config,
+        config: &config::Config,
         handlers: &[Box<dyn handlers::Processor>],
         job_fd: &RawFd,
         result_fd: &RawFd,
@@ -64,7 +64,7 @@ impl Controller {
         Ok(cmd)
     }
 
-    pub fn create(config: &Rc<options::Config>) -> Result<Self> {
+    pub fn create(config: &Rc<config::Config>) -> Result<Self> {
         let handlers = handlers::make_handlers(config)?;
 
         let job_sockets = sys::socket::socketpair(
@@ -102,7 +102,7 @@ impl Controller {
 
         Ok(Controller {
             handlers,
-            job_sockets,
+            job_sockets: Some(job_sockets),
             result_sockets,
             workers,
         })
@@ -120,7 +120,7 @@ impl Controller {
         let buf = serde_cbor::ser::to_vec_packed(&job)?;
 
         debug!("Sending {:?}", &job);
-        unistd::write(&self.job_sockets.1, &buf)?;
+        unistd::write(&self.job_sockets.as_ref().unwrap().1, &buf)?;
 
         Ok(())
     }
@@ -128,11 +128,11 @@ impl Controller {
     pub fn close(&mut self) -> Result<()> {
         debug!("Sending quit command to children…");
         for _ in &mut self.workers {
-            unistd::write(&self.job_sockets.1, b"")?;
+            unistd::write(&self.job_sockets.as_ref().unwrap().1, b"")?;
         }
 
         debug!("Closing control socket…");
-        unistd::close(self.job_sockets.1.as_raw_fd())?;
+        self.job_sockets.take();
 
         debug!("Waiting for children to exit…");
         for child in &mut self.workers {
@@ -188,7 +188,7 @@ impl Controller {
         Ok(())
     }
 
-    pub fn do_work(config: &Rc<options::Config>) -> Result<handlers::Stats> {
+    pub fn do_work(config: &Rc<config::Config>) -> Result<handlers::Stats> {
         let mut control = Controller::create(config)?;
 
         let mut inodes_seen = handlers::inodes_seen();
@@ -235,7 +235,7 @@ fn process_file_with_selected_handlers(
     Ok(entry_mod)
 }
 
-pub fn do_worker_work(config: &Rc<options::Config>) -> Result<()> {
+pub fn do_worker_work(config: &Rc<config::Config>) -> Result<()> {
     let job_socket = config.job_socket.unwrap();
     let job_socket = unsafe { UnixDatagram::from_raw_fd(job_socket) };
 
@@ -271,10 +271,10 @@ pub fn do_worker_work(config: &Rc<options::Config>) -> Result<()> {
         stats.add_one(res);
     }
 
-    debug!("Worker {} wrapping up...", process::id());
+    debug!("Wrapping up...");
     let buf = serde_cbor::ser::to_vec_packed(&stats)?;
     result_socket.send(&buf)?;
 
-    debug!("Worker {} says bye!", process::id());
+    debug!("Worker says bye!");
     Ok(())
 }

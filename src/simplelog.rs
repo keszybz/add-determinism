@@ -2,45 +2,48 @@
 
 use log::debug;
 use std::io::{self, Write};
+use std::process;
 
 pub struct SimpleLog {
-    maxlevel: log::LevelFilter,
+    level: log::LevelFilter,
+    show_pid: bool,
 }
 
 impl SimpleLog {
     /// Create new kernel logger with error level filter
-    pub fn with_level(level: log::LevelFilter) -> SimpleLog {
+    pub fn new(level: log::LevelFilter, show_pid: bool) -> SimpleLog {
         SimpleLog {
-            maxlevel: level,
+            level,
+            show_pid,
         }
     }
-}
-
-fn _write_stdout(record: &log::Record) {
-    let mut stdout = io::stdout().lock();
-    let _ = writeln!(stdout, "{}", record.args());
-    let _ = stdout.flush();
 }
 
 impl log::Log for SimpleLog {
     fn enabled(&self, meta: &log::Metadata) -> bool {
-        meta.level() <= self.maxlevel
+        meta.level() <= self.level
     }
 
     fn log(&self, record: &log::Record) {
-        if record.level() > self.maxlevel {
+        if record.level() > self.level {
             return;
         }
 
-        _write_stdout(record);
+        let mut stdout = io::stdout().lock();
+        if self.show_pid {
+            let _ = writeln!(stdout, "[{}] {}", process::id(), record.args());
+        } else {
+            let _ = writeln!(stdout, "{}", record.args());
+        };
+        let _ = stdout.flush();
     }
 
     fn flush(&self) {}
 }
 
 /// Set up logger with specified error level as the default logger
-pub fn init_with_level(level: log::LevelFilter) -> Result<(), log::SetLoggerError> {
-    log::set_boxed_logger(Box::new(SimpleLog::with_level(level)))?;
+pub fn init(level: log::LevelFilter, show_pid: bool) -> Result<(), log::SetLoggerError> {
+    log::set_boxed_logger(Box::new(SimpleLog::new(level, show_pid)))?;
     log::set_max_level(level);
 
     debug!("Initialized logging with log level {}", level);

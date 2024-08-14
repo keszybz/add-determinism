@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+mod config;
 mod handlers;
 mod multiprocess;
-mod options;
 mod simplelog;
 
 use anyhow::{anyhow, bail, Result};
@@ -11,7 +11,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-fn brp_check(config: &options::Config, build_root: Option<String>) -> Result<()> {
+fn brp_check(config: &config::Config, build_root: Option<String>) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
     // the target binary, so we cannot use that.
 
@@ -49,7 +49,7 @@ fn brp_check(config: &options::Config, build_root: Option<String>) -> Result<()>
 }
 
 fn main() -> Result<()> {
-    let config = match options::Config::make()? {
+    let config = match config::Config::make()? {
         None => { return Ok(()); }
         Some(some) => some
     };
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_brp_check() {
-        let mut config = options::Config::empty(111, false);
+        let mut config = config::Config::empty(111, false);
         config.brp = true;
         config.inputs.push("/var/tmp/foo/bar".into());
         config.inputs.push("/var/tmp/foo/./bar".into());

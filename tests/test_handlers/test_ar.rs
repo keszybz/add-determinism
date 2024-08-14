@@ -4,7 +4,7 @@ use std::fs;
 use std::os::linux::fs::MetadataExt;
 use std::rc::Rc;
 
-use add_determinism::options;
+use add_determinism::config;
 use add_determinism::handlers;
 use add_determinism::handlers::ar;
 
@@ -32,7 +32,7 @@ fn test_libempty() {
 fn test_testrelro() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111, false));
+    let cfg = Rc::new(config::Config::empty(111, false));
     let ar = ar::Ar::boxed(&cfg);
 
     assert!(ar.filter(&*input).unwrap());
@@ -52,7 +52,7 @@ fn test_testrelro() {
 fn test_testrelro_check() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(options::Config::empty(111, true));
+    let cfg = Rc::new(config::Config::empty(111, true));
     let ar = ar::Ar::boxed(&cfg);
 
     assert!(ar.filter(&*input).unwrap());
