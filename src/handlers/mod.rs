@@ -218,6 +218,31 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
+pub fn do_print(config: &Rc<config::Config>) -> Result<()> {
+    let handlers = make_handlers(config)?;
+
+    for input_path in &config.inputs {
+        let mut already_seen = 0u8;
+        process_file(
+            &handlers,
+            &mut already_seen,
+            input_path,
+            Some(&|selected_handlers, input_path| {
+                for (n_processor, processor) in handlers.iter().enumerate() {
+                    let cond = selected_handlers & (1 << n_processor) > 0;
+
+                    if cond {
+                        debug!("{}: running handler {}", input_path.display(), processor.name());
+                    }
+                }
+
+                Ok(())
+            }))?;
+    }
+
+    Ok(())
+}
+
 pub fn do_normal_work(config: &Rc<config::Config>) -> Result<Stats> {
     let handlers = make_handlers(config)?;
     let mut inodes_seen = inodes_seen();

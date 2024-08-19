@@ -37,6 +37,15 @@ struct Options {
     #[arg(long)]
     pub check: bool,
 
+    /// Print contents of files
+    #[arg(short, long,
+          conflicts_with = "brp",
+          conflicts_with = "check",
+          conflicts_with = "job_socket",
+          conflicts_with = "result_socket",
+          conflicts_with = "jobs")]
+    pub print: bool,
+
     /// Read paths to process from this socket.
     /// When used, an explicit list of handlers must be given.
     #[arg(long,
@@ -65,6 +74,7 @@ pub struct Config {
     pub inputs: Vec<PathBuf>,
     pub brp: bool,
     pub verbose: bool,
+    pub print: bool,
     pub job_socket: Option<RawFd>,
     pub result_socket: Option<RawFd>,
     pub check: bool,
@@ -193,6 +203,7 @@ impl Config {
             inputs: options.inputs,
             brp: options.brp,
             verbose: options.verbose,
+            print: options.print,
             job_socket: options.job_socket,
             result_socket: options.result_socket,
             check: options.check,
@@ -210,6 +221,7 @@ impl Config {
             inputs: vec![],
             brp: false,
             verbose: false,
+            print: false,
             job_socket: None,
             result_socket: None,
             check,
