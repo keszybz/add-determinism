@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use log::debug;
+use std::fmt;
 use std::fs::File;
-use std::io;
-use std::io::{Read, Write};
+use std::io::{self, Write};
 use std::iter;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -300,7 +300,6 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]   // Right now, we only use dbg! to print the object.
 struct CodeObject {
     argcount: u32,
     posonlyargcount: Option<u32>,
@@ -324,22 +323,213 @@ struct CodeObject {
     exceptiontable: Option<Box<Object>>,
 }
 
+impl CodeObject {
+    pub fn pretty_print<W>(&self, w: &mut W, prefix: &str, suffix: &str, multiline: bool) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        write!(w, "{prefix}Code")?;
+        self.name.pretty_print(w, " ", "", false)?;
+        if let Some(v) = &self.qualname {
+            v.pretty_print(w, "/", "", false)?;
+        }
+
+        write!(w, " argcount={}", self.argcount)?;
+        if let Some(v) = self.posonlyargcount {
+            write!(w, " posonlyargcount={}", v)?;
+        }
+        write!(w, " kwonlyargcount={}", self.kwonlyargcount)?;
+        if let Some(v) = self.nlocals {
+            write!(w, " nlocals={}", v)?;
+        }
+        write!(w, " stacksize={}", self.stacksize)?;
+        write!(w, " flags={:x}", self.flags)?;
+
+        if multiline {
+            let indent = " ".repeat(prefix.len() + 2);
+
+            self.filename.pretty_print(w, &format!("\n{indent}"), "", true)?;
+            write!(w, ":{}", self.firstlineno)?;
+
+            self.code.pretty_print(w, &format!("\n{indent}-code: "), "", true)?;
+            self.consts.pretty_print(w, &format!("\n{indent}-consts: "), "", true)?;
+            self.names.pretty_print(w, &format!("\n{indent}-names: "), "", true)?;
+            if let Some(v) = &self.varnames {
+                v.pretty_print(w, &format!("\n{indent}-varnames: "), "", true)?;
+            }
+            if let Some(v) = &self.freevars {
+                v.pretty_print(w, &format!("\n{indent}-freevars: "), "", true)?;
+            }
+            if let Some(v) = &self.cellvars {
+                v.pretty_print(w, &format!("\n{indent}-cellvars: "), "", true)?;
+            }
+            if let Some(v) = &self.localsplusnames {
+                v.pretty_print(w, &format!("\n{indent}-locals+names: "), "", true)?;
+            }
+            if let Some(v) = &self.localspluskinds {
+                v.pretty_print(w, &format!("\n{indent}-locals+kinds: "), "", true)?;
+            }
+
+            self.linetable.pretty_print(w, &format!("\n{indent}-linetable: "), "", true)?;
+            if let Some(v) = &self.exceptiontable {
+                v.pretty_print(w, &format!("\n{indent}-exceptiontable: "), "", true)?;
+            }
+        }
+
+        write!(w, "{suffix}")
+    }
+}
+
 #[derive(Debug)]
-#[allow(dead_code)]
+enum StringVariant {
+    ShortAscii,
+    ShortAsciiInterned,
+    String,
+    Interned,
+    Unicode,
+    Ascii,
+    AsciiInterned,
+}
+
+#[derive(Debug)]
 struct StringObject {
+    variant: StringVariant,
     bytes: Vec<u8>,
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
-struct TupleObject {
-    items: Vec<Object>,
+impl fmt::Display for StringObject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.variant {
+            StringVariant::ShortAscii |
+            StringVariant::ShortAsciiInterned |
+            StringVariant::Unicode |
+            StringVariant::Ascii |
+            StringVariant::AsciiInterned => {
+                if let Ok(string) = str::from_utf8(&self.bytes) {
+                    write!(f, "{:?}", string)
+                } else {
+                    write!(f, "[NON-UTF8] {:?}", self.bytes)
+                }
+            }
+            StringVariant::String |
+            StringVariant::Interned => {
+                write!(f, "{:?}", self.bytes)
+            }
+        }
+    }
+}
+
+impl StringObject {
+    pub fn pretty_print<W>(&self, w: &mut W, prefix: &str, suffix: &str, _multiline: bool) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        write!(w, "{prefix}{}{suffix}", self)
+    }
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
+enum SeqVariant {
+    Tuple,
+    List,
+    Set,
+    FrozenSet,
+}
+
+#[derive(Debug)]
+struct SeqObject {
+    variant: SeqVariant,
+    items: Vec<Object>,
+}
+
+impl SeqObject {
+    pub fn pretty_print<W>(&self, w: &mut W, prefix: &str, suffix: &str, multiline: bool) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let (beg, end);
+        let mut extra_comma = "";
+        let multiline = multiline && self.need_multiline(1);
+        let indent = prefix
+            .chars()
+            .skip_while(|ch| *ch == '\n')
+            .take_while(|ch| ch.is_whitespace())
+            .count();
+
+        match self.variant {
+            SeqVariant::Tuple => {
+                beg = "(";
+                end = ")";
+                if self.items.len() == 1 {
+                    extra_comma = ",";
+                }
+            }
+            SeqVariant::List => {
+                beg = "[";
+                end = "]";
+            }
+            SeqVariant::Set => {
+                if self.items.is_empty() {
+                    beg = "set(";
+                    end = ")";
+                } else {
+                    beg = "{";
+                    end = "}";
+                }
+            }
+            SeqVariant::FrozenSet => {
+                if self.items.is_empty() {
+                    beg = "frozenset(";
+                    end = ")";
+                } else {
+                    beg = "frozenset({";
+                    end = "})";
+                }
+            }
+        }
+
+        write!(w, "{prefix}{beg}")?;
+        for (n, v) in self.items.iter().enumerate() {
+            if multiline {
+                if n == 0 {
+                    writeln!(w)?;
+                }
+                v.pretty_print(
+                    w,
+                    &" ".repeat(indent + 2),
+                    ",\n",
+                    true,
+                )?;
+            } else {
+                v.pretty_print(
+                    w,
+                    if n > 0 { ", " } else { "" },
+                    extra_comma,
+                    false,
+                )?;
+            }
+        }
+
+        write!(w, "{:>width$}{end}{suffix}", "", width=multiline as usize * indent)
+    }
+
+    fn need_multiline(&self, max_nesting: u8) -> bool {
+        max_nesting == 0 ||
+            self.items.len() > 10 ||
+            self.items.iter().any(|x| x.need_multiline(max_nesting - 1))
+    }
+}
+
+#[derive(Debug)]
 struct DictObject {
     items: Vec<(Object, Object)>,
+}
+
+impl DictObject {
+    fn need_multiline(&self, max_nesting: u8) -> bool {
+        max_nesting == 0 ||
+            self.items.iter().any(|(x, y)| x.need_multiline(max_nesting - 1) || y.need_multiline(max_nesting - 1))
+    }
 }
 
 #[derive(Debug)]
@@ -350,7 +540,7 @@ enum Object {
     Int(u32),
     Short(i32),
     String(StringObject),
-    Tuple(TupleObject),
+    Seq(SeqObject),
     Null,
     None,
     True,
@@ -361,6 +551,55 @@ enum Object {
     Complex(f64, f64),
     Dict(DictObject),
     Ref(u32),
+}
+
+impl Object {
+    #[allow(clippy::write_literal)]
+    pub fn pretty_print<W>(&self, w: &mut W, prefix: &str, suffix: &str, multiline: bool) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        match self {
+            Object::Code(v) => v.pretty_print(w, prefix, suffix, multiline),
+            Object::String(v) => v.pretty_print(w, prefix, suffix, multiline),
+            Object::Seq(v) => v.pretty_print(w, prefix, suffix, multiline),
+            Object::Dict(_) => todo!(),
+
+            Object::Long(v) => write!(w, "{prefix}{}{suffix}", v),
+            Object::Int(v) => write!(w, "{prefix}{}{suffix}", v),
+            Object::Short(v) => write!(w, "{prefix}{}{suffix}", v),
+            Object::Null => write!(w, "{prefix}{}{suffix}", "NULL"),
+            Object::None => write!(w, "{prefix}{}{suffix}", "None"),
+            Object::True => write!(w, "{prefix}{}{suffix}", "True"),
+            Object::False => write!(w, "{prefix}{}{suffix}", "False"),
+            Object::StopIteration => write!(w, "{prefix}{}{suffix}", "StopIteration"),
+            Object::Ellipsis => write!(w, "{prefix}{}{suffix}", "..."),
+            Object::Float(v) => write!(w, "{prefix}{}{suffix}", v),
+            Object::Complex(x, y) => write!(w, "{prefix}{}+{}j{suffix}", x, y),
+            Object::Ref(n) => write!(w, "{prefix}(ref to {}){suffix}", n),
+        }
+    }
+
+    fn need_multiline(&self, max_nesting: u8) -> bool {
+        match self {
+            Object::Code(_) => true,
+            Object::Ref(_) => false, // TBD
+            Object::Long(_) |
+            Object::Int(_) |
+            Object::Short(_) |
+            Object::Null |
+            Object::None |
+            Object::True |
+            Object::False |
+            Object::StopIteration |
+            Object::Ellipsis |
+            Object::Float(_) |
+            Object::Complex(_, _) |
+            Object::String(_) => false,
+            Object::Seq(v) => v.need_multiline(max_nesting),
+            Object::Dict(v) => v.need_multiline(max_nesting),
+        }
+    }
 }
 
 #[derive(Debug, Ord, Eq, PartialOrd, PartialEq)]
@@ -384,7 +623,7 @@ pub struct PycParser {
 }
 
 impl PycParser {
-    pub fn from_file(input_path: &Path, mut input: impl Read) -> Result<Self> {
+    pub fn from_file(input_path: &Path, mut input: impl io::Read) -> Result<Self> {
         let mut buf = [0; 4];
         input.read_exact(&mut buf)?;
 
@@ -495,32 +734,38 @@ impl PycParser {
                 => self.read_long()?,
             b'l'    // LONG
                 => self.read_py_long()?,
+            b'y'    // BINARY_COMPLEX
+                => self.read_binary_complex()?,
 
             b'r'    // REF
                 => self.read_ref(offset)?,
 
-            b's' |  // STRING
-            b't' |  // INTERNED
-            b'u' |  // UNICODE
-            b'a' |  // ASCII
-            b'A'    // ASCII_INTERNED
-                => self.read_string(false)?,
-
-            b'y'    // BINARY_COMPLEX
-                => self.read_binary_complex()?,
-
-            b'z' |  // SHORT_ASCII
+            b'z'    // SHORT_ASCII
+                => self.read_string(StringVariant::ShortAscii)?,
             b'Z'    // SHORT_ASCII_INTERNED
-                => self.read_string(true)?,
+                => self.read_string(StringVariant::ShortAsciiInterned)?,
+            b's'    // STRING
+                => self.read_string(StringVariant::String)?,
+            b't'    // INTERNED
+                => self.read_string(StringVariant::Interned)?,
+            b'u'    // UNICODE
+                => self.read_string(StringVariant::Unicode)?,
+            b'a'    // ASCII
+                => self.read_string(StringVariant::Ascii)?,
+            b'A'    // ASCII_INTERNED
+                => self.read_string(StringVariant::AsciiInterned)?,
 
             b')'    // SMALL_TUPLE
                 => self.read_small_tuple()?,
 
-            b'(' |  // TUPLE
-            b'[' |  // LIST
-            b'<' |  // SET
+            b'('    // TUPLE
+                => self.read_seq(SeqVariant::Tuple)?,
+            b'['    // LIST
+                => self.read_seq(SeqVariant::List)?,
+            b'<'    // SET
+                => self.read_seq(SeqVariant::Set)?,
             b'>'    // FROZEN_SET
-                => self.read_seq(b)?,
+                => self.read_seq(SeqVariant::FrozenSet)?,
 
             b'{'    // DICT
                 => self.read_dict()?,
@@ -626,42 +871,49 @@ impl PycParser {
         Ok(Object::Long(result * n.signum()))
     }
 
-    fn read_string(&mut self, short: bool) -> Result<Object> {
-        let size = if short {
+    fn read_string(&mut self, variant: StringVariant) -> Result<Object> {
+        let size = match variant {
             // short == size is stored as one byte
-            self._read_byte()?.1 as usize
-        } else {
+            StringVariant::ShortAscii |
+            StringVariant::ShortAsciiInterned
+                => self._read_byte()?.1 as usize,
             // non-short == size is stored as long (4 bytes)
-            self._read_long()? as usize
+            StringVariant::String |
+            StringVariant::Interned |
+            StringVariant::Unicode |
+            StringVariant::Ascii |
+            StringVariant::AsciiInterned
+                => self._read_long()? as usize,
         };
 
         let offset = self.take(size)?;
         Ok(Object::String(StringObject {
-            bytes: self.data[offset .. offset + size].to_vec()
+            variant,
+            bytes: self.data[offset .. offset + size].to_vec(),
         }))
 
         // let string = str::from_utf8(&bytes)?;
         // Ok(Object::String(string.to_string()))
     }
 
-    fn _read_tuple(&mut self, size: u64) -> Result<Object> {
+    fn _read_tuple(&mut self, variant: SeqVariant, size: u64) -> Result<Object> {
         let mut items = Vec::new();
         for _ in 0..size {
             items.push(self.read_object()?);
         }
 
-        Ok(Object::Tuple(TupleObject { items }))
+        Ok(Object::Seq(SeqObject { variant, items }))
     }
 
     fn read_small_tuple(&mut self) -> Result<Object> {
         // small tuple — size is only one byte
         let size = self._read_byte()?.1;
-        self._read_tuple(size as u64)
+        self._read_tuple(SeqVariant::Tuple, size as u64)  // TBD: do we care about SMALL_TUPLE vs. TUPLE?
     }
 
-    fn read_seq(&mut self, _typ: u8) -> Result<Object> {
+    fn read_seq(&mut self, variant: SeqVariant) -> Result<Object> {
         let size = self._read_long()?;
-        self._read_tuple(size as u64)
+        self._read_tuple(variant, size as u64)
     }
 
     fn read_ref(&mut self, offset: usize) -> Result<Object> {
@@ -787,8 +1039,12 @@ pub struct Pyc {
 }
 
 impl Pyc {
+    pub fn new(config: &Rc<config::Config>) -> Self {
+        Self { config: config.clone() }
+    }
+
     pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self { config: config.clone() })
+        Box::new(Self::new(config))
     }
 }
 
@@ -821,6 +1077,22 @@ impl super::Processor for Pyc {
     }
 }
 
+impl Pyc {
+    pub fn pretty_print<W>(&self, writer: &mut W, input_path: &Path) -> Result<()>
+    where
+        W: fmt::Write,
+    {
+        let input = File::open(input_path)
+            .with_context(|| format!("Cannot open {:?}", input_path))?;
+        let mut parser = PycParser::from_file(input_path, input)?;
+
+        let obj = parser.read_object()?;
+
+        obj.pretty_print(writer, "", "\n", true)?;
+
+        Ok(())
+    }
+}
 
 pub struct PycZeroMtime {
     config: Rc<config::Config>,

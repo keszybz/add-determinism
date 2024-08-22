@@ -10,6 +10,7 @@ use log::{log, debug, info, warn, Level};
 use serde::{Serialize, Deserialize};
 use std::ascii::escape_default;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::{File, Metadata};
@@ -219,26 +220,17 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
 }
 
 pub fn do_print(config: &Rc<config::Config>) -> Result<()> {
-    let handlers = make_handlers(config)?;
+    let handler = pyc::Pyc::new(config);
+    let mut w = String::new();
 
-    for input_path in &config.inputs {
-        let mut already_seen = 0u8;
-        process_file(
-            &handlers,
-            &mut already_seen,
-            input_path,
-            Some(&|selected_handlers, input_path| {
-                for (n_processor, processor) in handlers.iter().enumerate() {
-                    let cond = selected_handlers & (1 << n_processor) > 0;
-
-                    if cond {
-                        debug!("{}: running handler {}", input_path.display(), processor.name());
-                    }
-                }
-
-                Ok(())
-            }))?;
+    for (n, input_path) in config.inputs.iter().enumerate() {
+        if n > 0 {
+            writeln!(w)?;  // separate outputs by empty line
+        }
+        handler.pretty_print(&mut w, input_path)?;
     }
+
+    print!("{}", w);
 
     Ok(())
 }
