@@ -180,7 +180,6 @@ zip = { version = "0.6.0", default-features = false, features = ["deflate", "def
 
 [dev-dependencies]
 tempfile = "3"
-ctor = "0.1"
 
 [profile.release]
 lto = true

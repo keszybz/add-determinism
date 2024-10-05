@@ -14,13 +14,15 @@ use std::rc::Rc;
 
 use add_determinism::config;
 use add_determinism::handlers;
-use super::prepare_dir;
+use super::{init, prepare_dir};
 
 fn make_handler(
     source_date_epoch: i64,
     check: bool,
     func: handlers::HandlerBoxed,
 ) -> Result<Box<dyn handlers::Processor>> {
+
+    init();
 
     let cfg = Rc::new(config::Config::empty(source_date_epoch, check));
     let mut handler = func(&cfg);
