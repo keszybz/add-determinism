@@ -374,7 +374,7 @@ pub struct InputOutputHelper<'a> {
     pub verbose: bool,  // include logging about each modified file
 }
 
-impl<'a> Drop for InputOutputHelper<'a> {
+impl Drop for InputOutputHelper<'_> {
     fn drop(&mut self) {
         if let Some(output_path) = self.output_path.take() {
             debug!("{}: discarding temporary copy", output_path.display());
