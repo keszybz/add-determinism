@@ -5,13 +5,11 @@ use log::debug;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
-use std::iter;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
 use std::time;
 
-use itertools::Itertools;
 use num_bigint_dig::{BigInt, ToBigInt};
 
 use crate::config;
@@ -307,20 +305,22 @@ struct CodeObject {
     nlocals: Option<u32>,
     stacksize: u32,
     flags: u32,
-    code: Box<Object>,
-    consts: Box<Object>,
-    names: Box<Object>,
-    varnames: Option<Box<Object>>,
-    freevars: Option<Box<Object>>,
-    cellvars: Option<Box<Object>>,
-    localsplusnames: Option<Box<Object>>,
-    localspluskinds: Option<Box<Object>>,
-    filename: Box<Object>,
-    name: Box<Object>,
-    qualname: Option<Box<Object>>,
+    code: Rc<Object>,
+    consts: Rc<Object>,
+    names: Rc<Object>,
+    varnames: Option<Rc<Object>>,
+    freevars: Option<Rc<Object>>,
+    cellvars: Option<Rc<Object>>,
+    localsplusnames: Option<Rc<Object>>,
+    localspluskinds: Option<Rc<Object>>,
+    filename: Rc<Object>,
+    name: Rc<Object>,
+    qualname: Option<Rc<Object>>,
     firstlineno: u32,
-    linetable: Box<Object>,
-    exceptiontable: Option<Box<Object>>,
+    linetable: Rc<Object>,
+    exceptiontable: Option<Rc<Object>>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl CodeObject {
@@ -344,6 +344,9 @@ impl CodeObject {
         }
         write!(w, " stacksize={}", self.stacksize)?;
         write!(w, " flags={:x}", self.flags)?;
+        if let Some(n) = self.ref_index {
+            write!(w, " [#{}]", n)?;
+        }
 
         if multiline {
             let indent = " ".repeat(prefix.len() + 2);
@@ -408,6 +411,8 @@ enum StringVariant {
 struct StringObject {
     variant: StringVariant,
     bytes: Vec<u8>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl fmt::Display for StringObject {
@@ -437,7 +442,9 @@ impl StringObject {
     where
         W: fmt::Write,
     {
-        write!(w, "{prefix}{}{suffix}", self)
+        write!(w, "{prefix}{}{}{suffix}",
+               self,
+               self.ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)))
     }
 }
 
@@ -452,7 +459,9 @@ enum SeqVariant {
 #[derive(Debug)]
 struct SeqObject {
     variant: SeqVariant,
-    items: Vec<Object>,
+    items: Vec<Rc<Object>>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl SeqObject {
@@ -523,7 +532,10 @@ impl SeqObject {
             }
         }
 
-        write!(w, "{:>width$}{end}{suffix}", "", width=multiline as usize * indent)
+        write!(w, "{:>width$}{end}{}{suffix}",
+               "",
+               self.ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)),
+               width=multiline as usize * indent)
     }
 
     fn need_multiline(&self, max_nesting: u8) -> bool {
@@ -535,7 +547,10 @@ impl SeqObject {
 
 #[derive(Debug)]
 struct DictObject {
-    items: Vec<(Object, Object)>,
+    items: Vec<(Rc<Object>, Rc<Object>)>,
+
+    #[allow(dead_code)]
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl DictObject {
@@ -546,24 +561,43 @@ impl DictObject {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
+struct RefObject {
+    number: u64,
+    target: Rc<Object>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl RefObject {
+    pub fn pretty_print<W>(&self, w: &mut W, prefix: &str, suffix: &str, multiline: bool) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let prefix = format!("{prefix}(ref to {}){}",
+                             self.number,
+                             self.ref_index.map_or("".to_string(), |n| format!("[#{}!]", n)));
+        self.target.pretty_print(w, &prefix, suffix, multiline)
+    }
+}
+
+
+#[derive(Debug)]
 enum Object {
     Code(CodeObject),
-    Long(BigInt),
-    Int(u32),
-    Short(i32),
+    Long(BigInt, Option<usize>),
+    Int(u32, Option<usize>),
     String(StringObject),
     Seq(SeqObject),
-    Null,
-    None,
-    True,
-    False,
-    StopIteration,
-    Ellipsis,
-    Float(f64),
-    Complex(f64, f64),
+    Null(Option<usize>),
+    None(Option<usize>),
+    True(Option<usize>),
+    False(Option<usize>),
+    StopIteration(Option<usize>),
+    Ellipsis(Option<usize>),
+    Float(f64, Option<usize>),
+    Complex(f64, f64, Option<usize>),
     Dict(DictObject),
-    Ref(u32),
+    Ref(RefObject),
 }
 
 impl Object {
@@ -572,56 +606,56 @@ impl Object {
     where
         W: fmt::Write,
     {
-        match self {
-            Object::Code(v) => v.pretty_print(w, prefix, suffix, multiline),
-            Object::String(v) => v.pretty_print(w, prefix, suffix, multiline),
-            Object::Seq(v) => v.pretty_print(w, prefix, suffix, multiline),
+        let (s, ref_index) = match self {
+            Object::Code(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline);
+            }
+            Object::String(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline);
+            }
+            Object::Seq(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline);
+            }
+            Object::Ref(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline);
+            }
             Object::Dict(_) => todo!(),
 
-            Object::Long(v) => write!(w, "{prefix}{}{suffix}", v),
-            Object::Int(v) => write!(w, "{prefix}{}{suffix}", v),
-            Object::Short(v) => write!(w, "{prefix}{}{suffix}", v),
-            Object::Null => write!(w, "{prefix}{}{suffix}", "NULL"),
-            Object::None => write!(w, "{prefix}{}{suffix}", "None"),
-            Object::True => write!(w, "{prefix}{}{suffix}", "True"),
-            Object::False => write!(w, "{prefix}{}{suffix}", "False"),
-            Object::StopIteration => write!(w, "{prefix}{}{suffix}", "StopIteration"),
-            Object::Ellipsis => write!(w, "{prefix}{}{suffix}", "..."),
-            Object::Float(v) => write!(w, "{prefix}{}{suffix}", v),
-            Object::Complex(x, y) => write!(w, "{prefix}{}+{}j{suffix}", x, y),
-            Object::Ref(n) => write!(w, "{prefix}(ref to {}){suffix}", n),
-        }
+            Object::Long(v, ref_index) => (format!("{v}"), ref_index),
+            Object::Int(v, ref_index) => (format!("{v}"), ref_index),
+            Object::Null(ref_index) => ("NULL".to_string(), ref_index),
+            Object::None(ref_index) => ("None".to_string(), ref_index),
+            Object::True(ref_index) => ("True".to_string(), ref_index),
+            Object::False(ref_index) => ("False".to_string(), ref_index),
+            Object::StopIteration(ref_index) => ("StopIteration".to_string(), ref_index),
+            Object::Ellipsis(ref_index) => ("...".to_string(), ref_index),
+            Object::Float(v, ref_index) => (format!("{v}"), ref_index),
+            Object::Complex(x, y, ref_index) => (format!("{x}+{y}j"), ref_index),
+        };
+
+        write!(w, "{prefix}{}{}{suffix}",
+               s, ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)))
     }
 
     fn need_multiline(&self, max_nesting: u8) -> bool {
         match self {
-            Object::Code(_) => true,
-            Object::Ref(_) => false, // TBD
-            Object::Long(_) |
-            Object::Int(_) |
-            Object::Short(_) |
-            Object::Null |
-            Object::None |
-            Object::True |
-            Object::False |
-            Object::StopIteration |
-            Object::Ellipsis |
-            Object::Float(_) |
-            Object::Complex(_, _) |
-            Object::String(_) => false,
+            Object::Code(..) => true,
+            Object::Ref(..) => false,
+            Object::Long(..) |
+            Object::Int(..) |
+            Object::Null(..) |
+            Object::None(..) |
+            Object::True(..) |
+            Object::False(..) |
+            Object::StopIteration(..) |
+            Object::Ellipsis(..) |
+            Object::Float(..) |
+            Object::Complex(..) |
+            Object::String(..) => false,
             Object::Seq(v) => v.need_multiline(max_nesting),
             Object::Dict(v) => v.need_multiline(max_nesting),
         }
     }
-}
-
-#[derive(Debug, Ord, Eq, PartialOrd, PartialEq)]
-struct Ref {
-    offset: usize,
-    number: u64, // This is either the reference count (for flag refs)
-                 // or the index into flag ref vector (for serialized refs).
-                 // I tried to make this an enum, but I didn't know how to
-                 // combine the two lists in one vector later on.
 }
 
 pub struct PycParser {
@@ -631,8 +665,7 @@ pub struct PycParser {
     data: Vec<u8>,      // the whole contents of the input file
     read_offset: usize, // index into .data
 
-    irefs: Vec<Ref>,
-    flag_refs: Vec<Ref>,
+    flag_refs: Vec<Option<Rc<Object>>>, // objects that have been flagged to be referenced
 }
 
 impl PycParser {
@@ -660,7 +693,6 @@ impl PycParser {
             version,
             data,
             read_offset: header_length,
-            irefs: Vec::new(),
             flag_refs: Vec::new(),
         };
 
@@ -718,70 +750,82 @@ impl PycParser {
         Ok((offset, self.data[offset]))
     }
 
-    fn read_object(&mut self) -> Result<Object> {
+    fn read_object(&mut self) -> Result<Rc<Object>> {
+        let ref_index: Option<usize>;
         let (offset, mut b) = self._read_byte()?;
 
         if (b & (0x1 << 7)) != 0 {
+            // This object has been flagged for future references. We
+            // put it on the list of objects which can be referred to
+            // later by index in the pyc stream.
             b &= !(0x1 << 7);
 
-            self.flag_refs.push(Ref { offset, number: 0 });
+            // We reserve the reference index number early.
+            // We'll put the constructed object into the slot later.
+            ref_index = Some(self.flag_refs.len());
+            self.flag_refs.push(None);
+        } else {
+            ref_index = None;
         }
 
         if TRACE {
-            debug!("{}:{}: type {}", self.input_path.display(), offset, b);
+            debug!("{}:{}: type {}{}",
+                   self.input_path.display(), offset, b,
+                   if ref_index.is_some() { format!(" flag#{}", ref_index.unwrap()) } else { "".to_string() },
+            );
         }
 
         let obj = match b {
-            b'0' => Object::Null,
-            b'N' => Object::None,
-            b'F' => Object::False,
-            b'T' => Object::True,
-            b'.' => Object::Ellipsis,
-            b'S' => Object::StopIteration,
+            b'0' => Rc::new(Object::Null(ref_index)),
+            b'N' => Rc::new(Object::None(ref_index)),
+            b'F' => Rc::new(Object::False(ref_index)),
+            b'T' => Rc::new(Object::True(ref_index)),
+            b'.' => Rc::new(Object::Ellipsis(ref_index)),
+            b'S' => Rc::new(Object::StopIteration(ref_index)),
 
             b'c'    // CODE
-                => self.read_codeobject()?,
+                => self.read_codeobject(ref_index)?,
             b'g'    // BINARY_FLOAT
-                => self.read_binary_float()?,
+                => self.read_binary_float(ref_index)?,
             b'i'    // INT
-                => self.read_long()?,
+                => self.read_long(ref_index)?,
             b'l'    // LONG
-                => self.read_py_long()?,
+                => self.read_py_long(ref_index)?,
             b'y'    // BINARY_COMPLEX
-                => self.read_binary_complex()?,
+                => self.read_binary_complex(ref_index)?,
 
             b'r'    // REF
-                => self.read_ref(offset)?,
+                => self.read_ref(ref_index)?,
 
             b'z'    // SHORT_ASCII
-                => self.read_string(StringVariant::ShortAscii)?,
+                => self.read_string(StringVariant::ShortAscii, ref_index)?,
             b'Z'    // SHORT_ASCII_INTERNED
-                => self.read_string(StringVariant::ShortAsciiInterned)?,
+                => self.read_string(StringVariant::ShortAsciiInterned, ref_index)?,
             b's'    // STRING
-                => self.read_string(StringVariant::String)?,
+                => self.read_string(StringVariant::String, ref_index)?,
             b't'    // INTERNED
-                => self.read_string(StringVariant::Interned)?,
+                => self.read_string(StringVariant::Interned, ref_index)?,
             b'u'    // UNICODE
-                => self.read_string(StringVariant::Unicode)?,
+                => self.read_string(StringVariant::Unicode, ref_index)?,
             b'a'    // ASCII
-                => self.read_string(StringVariant::Ascii)?,
+                => self.read_string(StringVariant::Ascii, ref_index)?,
             b'A'    // ASCII_INTERNED
-                => self.read_string(StringVariant::AsciiInterned)?,
+                => self.read_string(StringVariant::AsciiInterned, ref_index)?,
 
             b')'    // SMALL_TUPLE
-                => self.read_small_tuple()?,
+                => self.read_small_tuple(ref_index)?,
 
             b'('    // TUPLE
-                => self.read_seq(SeqVariant::Tuple)?,
+                => self.read_seq(SeqVariant::Tuple, ref_index)?,
             b'['    // LIST
-                => self.read_seq(SeqVariant::List)?,
+                => self.read_seq(SeqVariant::List, ref_index)?,
             b'<'    // SET
-                => self.read_seq(SeqVariant::Set)?,
+                => self.read_seq(SeqVariant::Set, ref_index)?,
             b'>'    // FROZEN_SET
-                => self.read_seq(SeqVariant::FrozenSet)?,
+                => self.read_seq(SeqVariant::FrozenSet, ref_index)?,
 
             b'{'    // DICT
-                => self.read_dict()?,
+                => self.read_dict(ref_index)?,
 
             b'I' |  // INT64
             b'f' |  // FLOAT
@@ -804,6 +848,11 @@ impl PycParser {
             dbg!(&obj);
         }
 
+        if let Some(ref_index) = ref_index {
+            assert!(self.flag_refs[ref_index].is_none());
+            self.flag_refs[ref_index] = Some(obj.clone());
+        }
+
         Ok(obj)
     }
 
@@ -811,37 +860,38 @@ impl PycParser {
         Ok(if cond { Some(self._read_long()?) } else { None })
     }
 
-    fn maybe_read_object(&mut self, cond: bool) -> Result<Option<Box<Object>>> {
+    fn maybe_read_object(&mut self, cond: bool) -> Result<Option<Rc<Object>>> {
         Ok(if cond {
-            Some(Box::new(self.read_object()?))
+            Some(self.read_object()?)
         } else {
             None
         })
     }
 
-    fn read_codeobject(&mut self) -> Result<Object> {
-        Ok(Object::Code(CodeObject {
+    fn read_codeobject(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Code(CodeObject {
             argcount: self._read_long()?,
             posonlyargcount: self.maybe_read_long(self.version >= (3, 8))?,
             kwonlyargcount: self._read_long()?,
             nlocals: self.maybe_read_long(self.version < (3, 11))?,
             stacksize: self._read_long()?,
             flags: self._read_long()?,
-            code: Box::new(self.read_object()?),
-            consts: Box::new(self.read_object()?),
-            names: Box::new(self.read_object()?),
+            code: self.read_object()?,
+            consts: self.read_object()?,
+            names: self.read_object()?,
             varnames: self.maybe_read_object(self.version < (3, 11))?,
             freevars: self.maybe_read_object(self.version < (3, 11))?,
             cellvars: self.maybe_read_object(self.version < (3, 11))?,
             localsplusnames: self.maybe_read_object(self.version >= (3, 11))?,
             localspluskinds: self.maybe_read_object(self.version >= (3, 11))?,
-            filename: Box::new(self.read_object()?),
-            name: Box::new(self.read_object()?),
+            filename: self.read_object()?,
+            name: self.read_object()?,
             qualname: self.maybe_read_object(self.version >= (3, 11))?,
             firstlineno: self._read_long()?,
-            linetable: Box::new(self.read_object()?),
+            linetable: self.read_object()?,
             exceptiontable: self.maybe_read_object(self.version >= (3, 11))?,
-        }))
+            ref_index,
+        })))
     }
 
     fn _read_long_at(&self, offset: usize) -> u32 {
@@ -860,8 +910,8 @@ impl PycParser {
         Ok(i32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
-    fn read_long(&mut self) -> Result<Object> {
-        Ok(Object::Int(self._read_long()?))
+    fn read_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Int(self._read_long()?, ref_index)))
     }
 
     fn _read_short(&mut self) -> Result<i32> {
@@ -872,7 +922,7 @@ impl PycParser {
         Ok(x | -(x & 0x8000))
     }
 
-    fn read_py_long(&mut self) -> Result<Object> {
+    fn read_py_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let n = self._read_long_signed()?;
 
         let mut result = 0_i32.to_bigint().unwrap();
@@ -881,10 +931,10 @@ impl PycParser {
             result += part.to_bigint().unwrap() << (i * PYLONG_MARSHAL_SHIFT) as usize;
         }
 
-        Ok(Object::Long(result * n.signum()))
+        Ok(Rc::new(Object::Long(result * n.signum(), ref_index)))
     }
 
-    fn read_string(&mut self, variant: StringVariant) -> Result<Object> {
+    fn read_string(&mut self, variant: StringVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let size = match variant {
             // short == size is stored as one byte
             StringVariant::ShortAscii |
@@ -900,36 +950,38 @@ impl PycParser {
         };
 
         let offset = self.take(size)?;
-        Ok(Object::String(StringObject {
+        Ok(Rc::new(Object::String(StringObject {
             variant,
             bytes: self.data[offset .. offset + size].to_vec(),
-        }))
+            ref_index,
+        })))
 
         // let string = str::from_utf8(&bytes)?;
         // Ok(Object::String(string.to_string()))
     }
 
-    fn _read_tuple(&mut self, variant: SeqVariant, size: u64) -> Result<Object> {
+    fn _read_tuple(&mut self, variant: SeqVariant, size: u64, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let mut items = Vec::new();
         for _ in 0..size {
             items.push(self.read_object()?);
         }
 
-        Ok(Object::Seq(SeqObject { variant, items }))
+        Ok(Rc::new(Object::Seq(SeqObject { variant, items, ref_index })))
     }
 
-    fn read_small_tuple(&mut self) -> Result<Object> {
+    fn read_small_tuple(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         // small tuple — size is only one byte
         let size = self._read_byte()?.1;
-        self._read_tuple(SeqVariant::Tuple, size as u64)  // TBD: do we care about SMALL_TUPLE vs. TUPLE?
+        // TBD: do we care about SMALL_TUPLE vs. TUPLE?
+        self._read_tuple(SeqVariant::Tuple, size as u64, ref_index)
     }
 
-    fn read_seq(&mut self, variant: SeqVariant) -> Result<Object> {
+    fn read_seq(&mut self, variant: SeqVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let size = self._read_long()?;
-        self._read_tuple(variant, size as u64)
+        self._read_tuple(variant, size as u64, ref_index)
     }
 
-    fn read_ref(&mut self, offset: usize) -> Result<Object> {
+    fn read_ref(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let index = self._read_long()?;
 
         // Is this a valid reference to one of the already-flagged objects?
@@ -941,10 +993,22 @@ impl PycParser {
             ).into());
         }
 
-        self.flag_refs[index as usize].number += 1;
-        self.irefs.push(Ref { offset, number: index as u64 });
+        let target = match &self.flag_refs[index as usize] {
+            None => {
+                return Err(super::Error::Other(
+                    format!("{}:0x{:x}: bad reference to flag_ref {} (reference from within)",
+                            self.input_path.display(), self.read_offset,
+                            index)
+                ).into());
+            }
+            Some(v) => v
+        };
 
-        Ok(Object::Ref(index))
+        Ok(Rc::new(Object::Ref(RefObject {
+            number: index as u64,
+            target: target.clone(),
+            ref_index,
+        })))
     }
 
     fn _read_binary_float(&mut self) -> Result<f64> {
@@ -953,21 +1017,24 @@ impl PycParser {
         Ok(f64::from_le_bytes(bytes.try_into().unwrap()))
     }
 
-    fn read_binary_float(&mut self) -> Result<Object> {
-        Ok(Object::Float(self._read_binary_float()?))
+    fn read_binary_float(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Float(self._read_binary_float()?, ref_index)))
     }
 
-    fn read_binary_complex(&mut self) -> Result<Object> {
-        Ok(Object::Complex(self._read_binary_float()?,
-                           self._read_binary_float()?))
+    fn read_binary_complex(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Complex(
+            self._read_binary_float()?,
+            self._read_binary_float()?,
+            ref_index,
+        )))
     }
 
-    fn read_dict(&mut self) -> Result<Object> {
+    fn read_dict(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let mut items = Vec::new();
 
         loop {
             let key = self.read_object()?;
-            if let Object::Null = key {
+            if let Object::Null(..) = *key {
                 break;
             }
 
@@ -975,60 +1042,7 @@ impl PycParser {
             items.push((key, value));
         }
 
-        Ok(Object::Dict(DictObject { items } ))
-    }
-
-    fn clear_unused_flag_refs(&mut self) -> Result<bool> {
-        // Sequence of flag_refs and irefs ordered by number of byte in a file
-        let final_list =
-            iter::zip(self.flag_refs.iter(), iter::repeat(true))
-            .merge_by(iter::zip(self.irefs.iter(), iter::repeat(false)),
-                      |&a, &b| a.0.offset < b.0.offset);
-
-        // A map where at a beginning, index in list == number of flag_ref
-        // but when unused flag is removed:
-        // - numbers in the list are original numbers of flag_refs
-        // - indices of the list are new numbers
-        let flag_ref_count = self.flag_refs.len();
-        let mut flag_ref_map = (0..flag_ref_count).collect::<Vec<_>>();
-
-        // new mutable content
-        let mut data = self.data.clone();
-
-        let mut removed_count = 0;
-        for (r, is_flag) in final_list {
-            // Clear FLAG_REF bit and remove it from map.
-            // all subsequent refs will have lower index in the map.
-            if is_flag {
-                if r.number == 0 {
-                    let index = self.flag_refs.binary_search(r).unwrap();
-                    let index_index = flag_ref_map.binary_search(&index).unwrap();
-                    flag_ref_map.remove(index_index);
-                    assert!(data[r.offset] & (1 << 7) > 0);
-                    data[r.offset] &= !(1 << 7);
-                    removed_count += 1;
-                }
-            } else {
-                let index = r.number as usize;
-                let new_index = flag_ref_map.binary_search(&index);
-                if new_index.is_err() {
-                    dbg!(&flag_ref_map);
-                    dbg!(&r.number);
-                }
-                let new_index = new_index.unwrap() as u32;
-
-                data[r.offset + 1 .. r.offset + 5]
-                    .copy_from_slice(&new_index.to_le_bytes());
-            }
-        }
-
-        debug!("{}: removed {} unused FLAG_REFs", self.input_path.display(), removed_count);
-        assert_eq!(data == self.data, removed_count == 0);
-        if removed_count > 0 {
-            self.data = data;
-        }
-
-        Ok(removed_count > 0)
+        Ok(Rc::new(Object::Dict(DictObject { items, ref_index } )))
     }
 
     fn set_zero_mtime(&mut self) -> Result<bool> {
@@ -1080,7 +1094,7 @@ impl super::Processor for Pyc {
 
         parser.read_object()?;
 
-        let have_mod = parser.clear_unused_flag_refs()?;
+        let have_mod = true;  // parser.clear_unused_flag_refs()?;
         if have_mod {
             io.open_output()?;
             io.output.as_mut().unwrap().write_all(&parser.data)?;
