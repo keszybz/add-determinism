@@ -351,7 +351,15 @@ impl CodeObject {
             self.filename.pretty_print(w, &format!("\n{indent}"), "", true)?;
             write!(w, ":{}", self.firstlineno)?;
 
-            self.code.pretty_print(w, &format!("\n{indent}-code: "), "", true)?;
+            // We expect StringVariant::String with bytecode here.
+            // Let's not print that out, since it's not going to be
+            // readable in any way. Otherwise, just print the object.
+            if let Object::String(v) = &*self.code {
+                write!(w, "\n{indent}-code: <{} bytes>", v.bytes.len())?;
+            } else {
+                self.code.pretty_print(w, &format!("\n{indent}-code: "), "", true)?;
+            }
+
             self.consts.pretty_print(w, &format!("\n{indent}-consts: "), "", true)?;
             self.names.pretty_print(w, &format!("\n{indent}-names: "), "", true)?;
             if let Some(v) = &self.varnames {
@@ -370,7 +378,12 @@ impl CodeObject {
                 v.pretty_print(w, &format!("\n{indent}-locals+kinds: "), "", true)?;
             }
 
-            self.linetable.pretty_print(w, &format!("\n{indent}-linetable: "), "", true)?;
+            if let Object::String(v) = &*self.linetable {
+                write!(w, "\n{indent}-linetable: <{} bytes>", v.bytes.len())?;
+            } else {
+                self.linetable.pretty_print(w, &format!("\n{indent}-linetable: "), "", true)?;
+            }
+
             if let Some(v) = &self.exceptiontable {
                 v.pretty_print(w, &format!("\n{indent}-exceptiontable: "), "", true)?;
             }
