@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Context, Result};
 use log::debug;
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
@@ -11,6 +12,9 @@ use std::str;
 use std::time;
 
 use num_bigint_dig::{BigInt, ToBigInt};
+use num_integer::Integer;
+use num_traits::cast::ToPrimitive;
+use num_traits::Zero;
 
 use crate::config;
 use crate::handlers::{InputOutputHelper, unwrap_os_string};
@@ -661,6 +665,7 @@ impl Object {
 pub struct PycParser {
     input_path: PathBuf,
     pub version: (u32, u32),
+    header_length: usize,
 
     data: Vec<u8>,      // the whole contents of the input file
     read_offset: usize, // index into .data
@@ -691,13 +696,15 @@ impl PycParser {
         let pyc = PycParser {
             input_path: input_path.to_path_buf(),
             version,
+            header_length,
             data,
             read_offset: header_length,
             flag_refs: Vec::new(),
         };
 
         let mtime = pyc.py_content_mtime();
-        debug!("{}: from py with mtime={} ({}), size={} bytes, {}",
+        // 'size' seems to be the count of serialized objects, excluding TYPE_REF
+        debug!("{}: from py with mtime={} ({}), size={} objects (??), {}",
                input_path.display(),
                mtime,
                chrono::DateTime::from_timestamp(mtime as i64, 0).unwrap(),
@@ -769,9 +776,10 @@ impl PycParser {
         }
 
         if TRACE {
-            debug!("{}:{}: type {}{}",
-                   self.input_path.display(), offset, b,
-                   if ref_index.is_some() { format!(" flag#{}", ref_index.unwrap()) } else { "".to_string() },
+            debug!("{}:{}/0x{:x}: type {:?}{}",
+                   self.input_path.display(), offset, offset,
+                   b as char,
+                   ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)),
             );
         }
 
@@ -856,7 +864,7 @@ impl PycParser {
         Ok(obj)
     }
 
-    fn maybe_read_long(&mut self, cond: bool) -> Result<Option<u32>> {
+    fn _maybe_read_long(&mut self, cond: bool) -> Result<Option<u32>> {
         Ok(if cond { Some(self._read_long()?) } else { None })
     }
 
@@ -871,9 +879,9 @@ impl PycParser {
     fn read_codeobject(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         Ok(Rc::new(Object::Code(CodeObject {
             argcount: self._read_long()?,
-            posonlyargcount: self.maybe_read_long(self.version >= (3, 8))?,
+            posonlyargcount: self._maybe_read_long(self.version >= (3, 8))?,
             kwonlyargcount: self._read_long()?,
-            nlocals: self.maybe_read_long(self.version < (3, 11))?,
+            nlocals: self._maybe_read_long(self.version < (3, 11))?,
             stacksize: self._read_long()?,
             flags: self._read_long()?,
             code: self.read_object()?,
@@ -955,9 +963,6 @@ impl PycParser {
             bytes: self.data[offset .. offset + size].to_vec(),
             ref_index,
         })))
-
-        // let string = str::from_utf8(&bytes)?;
-        // Ok(Object::String(string.to_string()))
     }
 
     fn _read_tuple(&mut self, variant: SeqVariant, size: u64, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -972,7 +977,6 @@ impl PycParser {
     fn read_small_tuple(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         // small tuple — size is only one byte
         let size = self._read_byte()?.1;
-        // TBD: do we care about SMALL_TUPLE vs. TUPLE?
         self._read_tuple(SeqVariant::Tuple, size as u64, ref_index)
     }
 
@@ -1045,6 +1049,286 @@ impl PycParser {
         Ok(Rc::new(Object::Dict(DictObject { items, ref_index } )))
     }
 
+    fn write_buffer(&self, code: &Rc<Object>) -> Vec<u8> {
+        // Copy the header from original file.
+        let mut out = Vec::from(&self.data[..self.header_length]);
+        let mut seen = HashMap::new();
+
+        self.write_object(&mut out, &mut seen, code);
+
+        // TODO: write size here
+        // let size_offset = if self.version < (3, 7) { 8 } else { 12 };
+        // let size = ?? as u32;
+        // out[size_offset .. size_offset + 4].copy_from_slice(&size.to_le_bytes());
+
+        // TODO: overwrite content hash if present
+        out
+    }
+
+    fn write_object(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        object: &Rc<Object>,
+    ) {
+        let offset = out.len();
+
+        match &**object {
+            Object::Code(v) => {
+                self.write_code(out, seen, v);
+            },
+            Object::String(v) => {
+                self.write_string(out, seen, v);
+            },
+            Object::Seq(v) => {
+                self.write_seq(out, seen, v);
+            }
+            Object::Ref(v) => {
+                self.write_object(out, seen, &v.target);
+            }
+            Object::Dict(_) => todo!(),
+            // mind null termination!
+
+            Object::Long(v, _) => {
+                self.write_long(out, seen, v);
+            }
+            Object::Int(v, _) => {
+                self.write_int(out, seen, *v);
+            }
+            Object::Null(_) => {
+                out.push(b'0');
+            }
+            Object::None(_) => {
+                out.push(b'N');
+            }
+            Object::False(_) =>  {
+                out.push(b'F');
+            }
+            Object::True(_) =>  {
+                out.push(b'T');
+            }
+            Object::StopIteration(_) =>  {
+                out.push(b'S');
+            }
+            Object::Ellipsis(_) =>  {
+                out.push(b'.');
+            }
+
+            Object::Float(v, _) => {
+                self.write_binary_float(out, seen, *v);
+            }
+            Object::Complex(x, y, _) => {
+                self.write_binary_complex(out, seen, *x, *y);
+            }
+        }
+    }
+
+    fn maybe_write_object(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        object: &Option<Rc<Object>>,
+    ) {
+        if let Some(object) = object {
+            self.write_object(out, seen, object);
+        }
+    }
+
+    fn write_code(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        code: &CodeObject,
+    ) {
+        out.push(b'c');
+
+        // When reading, the list of fields that are read depends on
+        // the version. In the opposite direction, we skip fields
+        // which are None and write anything that is Some. We write
+        // the bytecode in the same version that was read. If this is
+        // ever changed, we'd need to conditonalize here similarly as
+        // when reading.
+
+        self._write_int(out, code.argcount);
+        self._maybe_write_int(out, code.posonlyargcount);
+        self._write_int(out, code.kwonlyargcount);
+        self._maybe_write_int(out, code.nlocals);
+        self._write_int(out, code.stacksize);
+        self._write_int(out, code.flags);
+        self.write_object(out, seen, &code.code);
+        self.write_object(out, seen, &code.consts);
+        self.write_object(out, seen, &code.names);
+        self.maybe_write_object(out, seen, &code.varnames);
+        self.maybe_write_object(out, seen, &code.freevars);
+        self.maybe_write_object(out, seen, &code.cellvars);
+
+        self.maybe_write_object(out, seen, &code.localsplusnames);
+        self.maybe_write_object(out, seen, &code.localspluskinds);
+
+        self.write_object(out, seen, &code.filename);
+        self.write_object(out, seen, &code.name);
+
+        self.maybe_write_object(out, seen, &code.qualname);
+
+        self._write_int(out, code.firstlineno);
+
+        self.write_object(out, seen, &code.linetable);
+        self.maybe_write_object(out, seen, &code.exceptiontable);
+    }
+
+    fn write_string(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        string: &StringObject,
+    ) {
+        out.push(
+            match string.variant {
+                StringVariant::ShortAscii         => b'z',
+                StringVariant::ShortAsciiInterned => b'Z',
+                StringVariant::String             => b's',
+                StringVariant::Interned           => b't',
+                StringVariant::Unicode            => b'u',
+                StringVariant::Ascii              => b'a',
+                StringVariant::AsciiInterned      => b'A',
+            }
+        );
+
+        let len = string.bytes.len();
+        match string.variant {
+            // short == size is stored as one byte
+            StringVariant::ShortAscii |
+            StringVariant::ShortAsciiInterned => {
+                out.push(len as u8);
+            }
+            // non-short == size is stored as long (4 bytes)
+            StringVariant::String |
+            StringVariant::Interned |
+            StringVariant::Unicode |
+            StringVariant::Ascii |
+            StringVariant::AsciiInterned => {
+                self._write_int(out, len as u32);
+            }
+        };
+
+        out.extend_from_slice(&string.bytes);
+    }
+
+    fn write_seq(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        seq: &SeqObject,
+    ) {
+        let len = seq.items.len();
+        let byte = match seq.variant {
+            SeqVariant::Tuple => {
+                if len < 256 {
+                    b')'  // SMALL_TUPLE
+                } else {
+                    b'('  // TUPLE
+                }
+            }
+            SeqVariant::List      => b'[',
+            SeqVariant::Set       => b'<',
+            SeqVariant::FrozenSet => b'>',
+        };
+
+        out.push(byte);
+
+        if byte == b')' {
+            out.push(len as u8);
+        } else {
+            self._write_int(out, len as u32);
+        }
+
+        for item in seq.items.iter() {
+            self.write_object(out, seen, item);
+        }
+    }
+
+    fn _write_int(&self, out: &mut Vec<u8>, int: u32) {
+        let bytes = int.to_le_bytes();
+        out.extend_from_slice(&bytes);
+    }
+
+    fn _write_signed_int(&self, out: &mut Vec<u8>, int: i32) {
+        let bytes = int.to_le_bytes();
+        out.extend_from_slice(&bytes);
+    }
+
+    fn _maybe_write_int(
+        &self,
+        out: &mut Vec<u8>,
+        int: Option<u32>) {
+        if let Some(int) = int {
+            self._write_int(out, int);
+        }
+    }
+
+    fn write_int(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        int: u32,
+    ) {
+        out.push(b'i');
+        self._write_int(out, int);
+    }
+
+    fn write_long(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        long: &BigInt,
+    ) {
+        if let Some(int) = long.to_u32() {
+            self.write_int(out, seen, int);
+        } else {
+            out.push(b'l');
+
+            let n = long.bits().div_ceil(PYLONG_MARSHAL_SHIFT as usize);
+            let sign = if *long < BigInt::zero() { -1i32 } else { 1i32 };
+            self._write_signed_int(out, n as i32 * sign);
+
+            let mut val = long.clone();
+            let div = BigInt::from(1u32 << PYLONG_MARSHAL_SHIFT);
+            for _ in 0 .. n {
+                let (q, r) = val.div_rem(&div);
+                self.write_int(out, seen, r.to_u32().unwrap());
+                val = q;
+            }
+            assert!(val.is_zero());
+        }
+    }
+
+    fn _write_binary_float(&self, out: &mut Vec<u8>, float: f64) {
+        let bytes = float.to_le_bytes();
+        out.extend_from_slice(&bytes);
+    }
+
+    fn write_binary_float(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        float: f64,
+    ) {
+        out.push(b'g');
+        self._write_binary_float(out, float);
+    }
+
+    fn write_binary_complex(
+        &self,
+        out: &mut Vec<u8>,
+        seen: &mut HashMap<Rc<Object>, usize>,
+        x: f64,
+        y: f64,
+    ) {
+        out.push(b'y');
+        self._write_binary_float(out, x);
+        self._write_binary_float(out, y);
+    }
+
     fn set_zero_mtime(&mut self) -> Result<bool> {
         // Set the embedded mtime timestamp of the source .py file to 0 in the header.
 
@@ -1092,12 +1376,14 @@ impl super::Processor for Pyc {
             return Ok(super::ProcessResult::Noop);  // We don't want to touch python2 files
         }
 
-        parser.read_object()?;
+        let code = parser.read_object()?;
+        let new = parser.write_buffer(&code);
 
-        let have_mod = true;  // parser.clear_unused_flag_refs()?;
+        let have_mod = new != parser.data;
+
         if have_mod {
             io.open_output()?;
-            io.output.as_mut().unwrap().write_all(&parser.data)?;
+            io.output.as_mut().unwrap().write_all(&new)?;
         }
 
         io.finalize(have_mod)
