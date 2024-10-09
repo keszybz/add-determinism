@@ -1599,7 +1599,7 @@ impl super::Processor for Pyc {
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(path.extension().is_some_and(|x| x == "pyc"))
+        Ok(self.config.ignore_extension || path.extension().is_some_and(|x| x == "pyc"))
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
@@ -1695,7 +1695,7 @@ impl super::Processor for PycZeroMtime {
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(path.extension().is_some_and(|x| x == "pyc"))
+        Ok(self.config.ignore_extension || path.extension().is_some_and(|x| x == "pyc"))
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {

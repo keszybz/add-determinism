@@ -37,6 +37,10 @@ struct Options {
     #[arg(long)]
     pub check: bool,
 
+    /// Ignore file name extensions, always run handlers.
+    #[arg(long)]
+    pub ignore_extension: bool,
+
     /// Print contents of files
     #[arg(short, long,
           conflicts_with = "brp",
@@ -78,6 +82,7 @@ pub struct Config {
     pub job_socket: Option<RawFd>,
     pub result_socket: Option<RawFd>,
     pub check: bool,
+    pub ignore_extension: bool,
     pub jobs: Option<u32>,
     pub source_date_epoch: Option<i64>,
     pub handler_names: Vec<&'static str>,
@@ -207,6 +212,7 @@ impl Config {
             job_socket: options.job_socket,
             result_socket: options.result_socket,
             check: options.check,
+            ignore_extension: options.ignore_extension,
             jobs,
             source_date_epoch,
             handler_names,
@@ -225,6 +231,7 @@ impl Config {
             job_socket: None,
             result_socket: None,
             check,
+            ignore_extension: false,
             jobs: None,
             source_date_epoch: Some(source_date_epoch),
             handler_names: vec![],

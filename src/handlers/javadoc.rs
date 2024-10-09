@@ -76,8 +76,10 @@ impl super::Processor for Javadoc {
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(path.extension().is_some_and(|x| x == "html")
-           // && path.to_str().is_some_and(|x| x.contains("/usr/share/javadoc/"))
+        Ok(
+            self.config.ignore_extension ||
+                path.extension().is_some_and(|x| x == "html")
+            // && path.to_str().is_some_and(|x| x.contains("/usr/share/javadoc/"))
         )
     }
 
