@@ -133,6 +133,12 @@ fn test_pyc_file_with_dict() {
 }
 
 #[test]
+fn test_pyc_file_with_list() {
+    let pyc = make_handler(12345679, false, pyc::Pyc::boxed).unwrap();
+    test_corpus_file(pyc, "tests/cases/listo.cpython-313.pyc");
+}
+
+#[test]
 fn test_python_stdlib_file_1() {
     // Let's call test_python_stdlib_file() once manually for easier development.
     test_python_stdlib_file("tests/cases/python_stdlib/3.9/sunau.cpython-39.pyc");
