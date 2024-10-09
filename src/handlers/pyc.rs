@@ -389,6 +389,36 @@ impl Hash for CodeObject {
 }
 
 impl CodeObject {
+    fn pretty_print_binary_string<W>(
+        w: &mut W,
+        indent: &str,
+        name: &str,
+        mut object: &Rc<Object>,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let ref_info;
+        if let Object::Ref(v) = object.as_ref() {
+            ref_info = format!(
+                "(ref to {}){}",
+                v.number,
+                format_ref(show_ref, &v.ref_index).unwrap_or("".to_string()),
+            );
+            object = &v.target;
+        } else {
+            ref_info = "".to_string()
+        };
+
+        if let Object::String(v) = object.as_ref() {
+            if !v.bytes.is_empty() {
+                return write!(w, "\n{indent}-{name}: {}[{} bytes]", ref_info, v.bytes.len())
+            }
+        }
+        object.pretty_print(w, &format!("\n{indent}-{name}: {}", ref_info), "", true, true)
+    }
+
     pub fn pretty_print<W>(
         &self,
         w: &mut W,
@@ -429,11 +459,7 @@ impl CodeObject {
             // We expect StringVariant::String with bytecode here.
             // Let's not print that out, since it's not going to be
             // readable in any way. Otherwise, just print the object.
-            if let Object::String(v) = &*self.code {
-                write!(w, "\n{indent}-code: <{} bytes>", v.bytes.len())?;
-            } else {
-                self.code.pretty_print(w, &format!("\n{indent}-code: "), "", true, true)?;
-            }
+            Self::pretty_print_binary_string(w, &indent, "code", &self.code, show_ref)?;
 
             self.consts.pretty_print(w, &format!("\n{indent}-consts: "), "", true, true)?;
             self.names.pretty_print(w, &format!("\n{indent}-names: "), "", true, true)?;
@@ -452,15 +478,9 @@ impl CodeObject {
             if let Some(v) = &self.localspluskinds {
                 v.pretty_print(w, &format!("\n{indent}-locals+kinds: "), "", true, true)?;
             }
-
-            if let Object::String(v) = &*self.linetable {
-                write!(w, "\n{indent}-linetable: <{} bytes>", v.bytes.len())?;
-            } else {
-                self.linetable.pretty_print(w, &format!("\n{indent}-linetable: "), "", true, true)?;
-            }
-
+            Self::pretty_print_binary_string(w, &indent, "linetable", &self.linetable, show_ref)?;
             if let Some(v) = &self.exceptiontable {
-                v.pretty_print(w, &format!("\n{indent}-exceptiontable: "), "", true, true)?;
+                Self::pretty_print_binary_string(w, &indent, "exceptiontable", v, show_ref)?;
             }
         }
 
