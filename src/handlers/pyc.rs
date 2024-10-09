@@ -16,7 +16,7 @@ use std::time;
 use num_bigint_dig::{BigInt, ToBigInt};
 use num_integer::Integer;
 use num_traits::cast::ToPrimitive;
-use num_traits::Zero;
+use num_traits::{Signed, Zero};
 
 use crate::config;
 use crate::handlers::{InputOutputHelper, unwrap_os_string};
@@ -1505,6 +1505,11 @@ impl PycWriter {
         self._write_int(int);
     }
 
+    fn _write_short(&mut self, int: u16) {
+        let bytes = int.to_le_bytes();
+        self.buffer.extend_from_slice(&bytes);
+    }
+
     fn write_long(&mut self, long: &BigInt) {
         if let Some(int) = long.to_u32() {
             self.write_int(int);
@@ -1513,13 +1518,14 @@ impl PycWriter {
 
             let n = long.bits().div_ceil(PYLONG_MARSHAL_SHIFT as usize);
             let sign = if *long < BigInt::zero() { -1i32 } else { 1i32 };
+
             self._write_signed_int(n as i32 * sign);
 
-            let mut val = long.clone();
-            let div = BigInt::from(1u32 << PYLONG_MARSHAL_SHIFT);
+            let mut val = long.abs();
+            let div = BigInt::from(1u16 << PYLONG_MARSHAL_SHIFT);
             for _ in 0 .. n {
                 let (q, r) = val.div_rem(&div);
-                self._write_int(r.to_u32().unwrap());
+                self._write_short(r.to_u16().unwrap());
                 val = q;
             }
             assert!(val.is_zero());
