@@ -304,6 +304,14 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     }
 }
 
+fn format_ref(show_ref: bool, ref_index: &Option<usize>) -> Option<String> {
+    if show_ref && ref_index.is_some() {
+        Some(format!(" [#{}]", ref_index.unwrap()))
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Eq)]
 struct CodeObject {
     argcount: u32,
@@ -387,14 +395,15 @@ impl CodeObject {
         prefix: &str,
         suffix: &str,
         multiline: bool,
+        show_ref: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
     {
         write!(w, "{prefix}Code")?;
-        self.name.pretty_print(w, " ", "", false)?;
+        self.name.pretty_print(w, " ", "", false, true)?;
         if let Some(v) = &self.qualname {
-            v.pretty_print(w, "/", "", false)?;
+            v.pretty_print(w, "/", "", false, true)?;
         }
 
         write!(w, " argcount={}", self.argcount)?;
@@ -407,14 +416,14 @@ impl CodeObject {
         }
         write!(w, " stacksize={}", self.stacksize)?;
         write!(w, " flags={:x}", self.flags)?;
-        if let Some(n) = self.ref_index {
-            write!(w, " [#{}]", n)?;
+        if let Some(s) = format_ref(show_ref, &self.ref_index) {
+            write!(w, "{}", s)?;
         }
 
         if multiline {
             let indent = " ".repeat(prefix.len() + 2);
 
-            self.filename.pretty_print(w, &format!("\n{indent}"), "", true)?;
+            self.filename.pretty_print(w, &format!("\n{indent}"), "", true, true)?;
             write!(w, ":{}", self.firstlineno)?;
 
             // We expect StringVariant::String with bytecode here.
@@ -423,35 +432,35 @@ impl CodeObject {
             if let Object::String(v) = &*self.code {
                 write!(w, "\n{indent}-code: <{} bytes>", v.bytes.len())?;
             } else {
-                self.code.pretty_print(w, &format!("\n{indent}-code: "), "", true)?;
+                self.code.pretty_print(w, &format!("\n{indent}-code: "), "", true, true)?;
             }
 
-            self.consts.pretty_print(w, &format!("\n{indent}-consts: "), "", true)?;
-            self.names.pretty_print(w, &format!("\n{indent}-names: "), "", true)?;
+            self.consts.pretty_print(w, &format!("\n{indent}-consts: "), "", true, true)?;
+            self.names.pretty_print(w, &format!("\n{indent}-names: "), "", true, true)?;
             if let Some(v) = &self.varnames {
-                v.pretty_print(w, &format!("\n{indent}-varnames: "), "", true)?;
+                v.pretty_print(w, &format!("\n{indent}-varnames: "), "", true, true)?;
             }
             if let Some(v) = &self.freevars {
-                v.pretty_print(w, &format!("\n{indent}-freevars: "), "", true)?;
+                v.pretty_print(w, &format!("\n{indent}-freevars: "), "", true, true)?;
             }
             if let Some(v) = &self.cellvars {
-                v.pretty_print(w, &format!("\n{indent}-cellvars: "), "", true)?;
+                v.pretty_print(w, &format!("\n{indent}-cellvars: "), "", true, true)?;
             }
             if let Some(v) = &self.localsplusnames {
-                v.pretty_print(w, &format!("\n{indent}-locals+names: "), "", true)?;
+                v.pretty_print(w, &format!("\n{indent}-locals+names: "), "", true, true)?;
             }
             if let Some(v) = &self.localspluskinds {
-                v.pretty_print(w, &format!("\n{indent}-locals+kinds: "), "", true)?;
+                v.pretty_print(w, &format!("\n{indent}-locals+kinds: "), "", true, true)?;
             }
 
             if let Object::String(v) = &*self.linetable {
                 write!(w, "\n{indent}-linetable: <{} bytes>", v.bytes.len())?;
             } else {
-                self.linetable.pretty_print(w, &format!("\n{indent}-linetable: "), "", true)?;
+                self.linetable.pretty_print(w, &format!("\n{indent}-linetable: "), "", true, true)?;
             }
 
             if let Some(v) = &self.exceptiontable {
-                v.pretty_print(w, &format!("\n{indent}-exceptiontable: "), "", true)?;
+                v.pretty_print(w, &format!("\n{indent}-exceptiontable: "), "", true, true)?;
             }
         }
 
@@ -521,13 +530,16 @@ impl StringObject {
         prefix: &str,
         suffix: &str,
         _multiline: bool,
+        show_ref: bool,
 ) -> fmt::Result
     where
         W: fmt::Write,
     {
-        write!(w, "{prefix}{}{}{suffix}",
-               self,
-               self.ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)))
+        write!(
+            w, "{prefix}{}{}{suffix}",
+            self,
+            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+        )
     }
 }
 
@@ -568,6 +580,7 @@ impl SeqObject {
         prefix: &str,
         suffix: &str,
         multiline: bool,
+        show_ref: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
@@ -624,6 +637,7 @@ impl SeqObject {
                     &" ".repeat(indent + 2),
                     ",\n",
                     true,
+                    true,
                 )?;
             } else {
                 v.pretty_print(
@@ -631,14 +645,17 @@ impl SeqObject {
                     if n > 0 { ", " } else { "" },
                     extra_comma,
                     false,
+                    true,
                 )?;
             }
         }
 
-        write!(w, "{:>width$}{end}{}{suffix}",
-               "",
-               self.ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)),
-               width=multiline as usize * indent)
+        write!(
+            w, "{:>width$}{end}{}{suffix}",
+            "",
+            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+            width=multiline as usize * indent,
+        )
     }
 
     fn need_multiline(&self, max_nesting: u8) -> bool {
@@ -702,14 +719,15 @@ impl RefObject {
         prefix: &str,
         suffix: &str,
         multiline: bool,
+        show_ref: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
     {
         let prefix = format!("{prefix}(ref to {}){}",
                              self.number,
-                             self.ref_index.map_or("".to_string(), |n| format!("[#{}!]", n)));
-        self.target.pretty_print(w, &prefix, suffix, multiline)
+                             format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()));
+        self.target.pretty_print(w, &prefix, suffix, multiline, false)
     }
 }
 
@@ -789,22 +807,23 @@ impl Object {
         prefix: &str,
         suffix: &str,
         multiline: bool,
+        show_ref: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
     {
         let (s, ref_index) = match self {
             Object::Code(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline);
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
             Object::String(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline);
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
             Object::Seq(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline);
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
             Object::Ref(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline);
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
             Object::Dict(_) => todo!(),
 
@@ -820,8 +839,11 @@ impl Object {
             Object::Complex(x, y, ref_index) => (format!("{x}+{y}j"), ref_index),
         };
 
-        write!(w, "{prefix}{}{}{suffix}",
-               s, ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)))
+        write!(
+            w, "{prefix}{}{}{suffix}",
+            s,
+            format_ref(show_ref, ref_index).unwrap_or("".to_string())
+        )
     }
 
     fn need_multiline(&self, max_nesting: u8) -> bool {
@@ -1640,7 +1662,7 @@ impl Pyc {
 
         let obj = parser.read_object()?;
 
-        obj.pretty_print(writer, "", "\n", true)?;
+        obj.pretty_print(writer, "", "\n", true, true)?;
 
         Ok(())
     }
