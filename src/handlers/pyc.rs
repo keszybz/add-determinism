@@ -1609,6 +1609,11 @@ impl super::Processor for Pyc {
         if parser.version < (3, 0) {
             return Ok(super::ProcessResult::Noop);  // We don't want to touch python2 files
         }
+        if parser.py_content_hash().is_some() {
+            return Err(super::Error::Other(
+                "pyc file with hash invalidation are not supported".to_string()
+            ).into());
+        }
 
         let code = parser.read_object()?;
         let new = PycWriter::to_buffer(&parser, &code);
