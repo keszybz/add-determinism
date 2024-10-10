@@ -721,14 +721,17 @@ struct RefObject {
 }
 
 impl PartialEq for RefObject {
+    // We really care whether the target is the same.
+    // When writing, we'll dereference the Ref to get to the contents.
+
     fn eq(&self, other: &Self) -> bool {
-        self.number == other.number
+        self.target == other.target
     }
 }
 
 impl Hash for RefObject {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.number.hash(state);
+        self.target.hash(state);
     }
 }
 
