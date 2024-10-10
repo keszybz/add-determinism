@@ -154,4 +154,7 @@ fn test_corpus_file(handler: Box<dyn handlers::Processor>, filename: &str) {
         .read_to_end(&mut data_output).unwrap();
 
     assert_eq!(data_output, data_expected);
+
+    // Check that rerun does not result in any modifications
+    assert_eq!(handler.process(&*input).unwrap(), handlers::ProcessResult::Noop);
 }

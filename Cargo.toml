@@ -170,6 +170,8 @@ itertools = "0.13.0"
 log = { version = "0.4", features = ["std"] }
 nix = { version = "0.28.0", features = ["fs", "socket"] }
 num-bigint-dig = "0.8.4"
+num-integer = "0.1.46"
+num-traits = "0.2.19"
 regex = { version = "1.10.0", default-features = false, features = ["std", "perf", "unicode-case"] }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_cbor = "0.11"

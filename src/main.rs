@@ -55,6 +55,10 @@ fn main() -> Result<()> {
     };
     let config = Rc::new(config);
 
+    if config.print {
+        return handlers::do_print(&config);
+    }
+
     brp_check(&config, None)?;
 
     let stats;
