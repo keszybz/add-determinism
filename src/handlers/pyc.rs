@@ -1531,25 +1531,21 @@ impl PycWriter {
     }
 
     fn write_long(&mut self, long: &BigInt) {
-        if let Some(int) = long.to_u32() {
-            self.write_int(int);
-        } else {
-            self.buffer.push(b'l');
+        self.buffer.push(b'l');
 
-            let n = long.bits().div_ceil(PYLONG_MARSHAL_SHIFT as usize);
-            let sign = if *long < BigInt::zero() { -1i32 } else { 1i32 };
+        let n = long.bits().div_ceil(PYLONG_MARSHAL_SHIFT as usize);
+        let sign = if *long < BigInt::zero() { -1i32 } else { 1i32 };
 
-            self._write_signed_int(n as i32 * sign);
+        self._write_signed_int(n as i32 * sign);
 
-            let mut val = long.abs();
-            let div = BigInt::from(1u16 << PYLONG_MARSHAL_SHIFT);
-            for _ in 0 .. n {
-                let (q, r) = val.div_rem(&div);
-                self._write_short(r.to_u16().unwrap());
-                val = q;
-            }
-            assert!(val.is_zero());
+        let mut val = long.abs();
+        let div = BigInt::from(1u16 << PYLONG_MARSHAL_SHIFT);
+        for _ in 0 .. n {
+            let (q, r) = val.div_rem(&div);
+            self._write_short(r.to_u16().unwrap());
+            val = q;
         }
+        assert!(val.is_zero());
     }
 
     fn _write_binary_float(&mut self, float: u64) {
