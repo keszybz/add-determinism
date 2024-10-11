@@ -1,24 +1,29 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use log::debug;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
-use std::io;
-use std::io::{Read, Write};
-use std::iter;
+use std::hash::{Hash, Hasher};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
 use std::time;
 
-use itertools::Itertools;
 use num_bigint_dig::{BigInt, ToBigInt};
+use num_integer::Integer;
+use num_traits::cast::ToPrimitive;
+use num_traits::{Signed, Zero};
 
 use crate::config;
 use crate::handlers::{InputOutputHelper, unwrap_os_string};
 
 const PYC_MAGIC: &[u8] = &[0x0D, 0x0A];
 const PYLONG_MARSHAL_SHIFT: i32 = 15;
+const FLAG_REF_BIT: u8 = 0x1 << 7;
 
 const TRACE: bool = false;
 
@@ -299,70 +304,605 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     }
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]   // Right now, we only use dbg! to print the object.
-enum Object {
-    Code {
-        argcount: u32,
-        posonlyargcount: Option<u32>,
-        kwonlyargcount: u32,
-        nlocals: Option<u32>,
-        stacksize: u32,
-        flags: u32,
-        code: Box<Object>,
-        consts: Box<Object>,
-        names: Box<Object>,
-        varnames: Option<Box<Object>>,
-        freevars: Option<Box<Object>>,
-        cellvars: Option<Box<Object>>,
-        localsplusnames: Option<Box<Object>>,
-        localspluskinds: Option<Box<Object>>,
-        filename: Box<Object>,
-        name: Box<Object>,
-        qualname: Option<Box<Object>>,
-        firstlineno: u32,
-        linetable: Box<Object>,
-        exceptiontable: Option<Box<Object>>,
-    },
-    Long(BigInt),
-    Int(u32),
-    Short(i32),
-    String(Vec<u8>),
-    Tuple(Vec<Object>),
-    Null,
-    None,
-    True,
-    False,
-    StopIteration,
-    Ellipsis,
-    Float(f64),
-    Complex(f64, f64),
-    Dict(Vec<(Object, Object)>),
-    Ref(String),
+fn format_ref(show_ref: bool, ref_index: &Option<usize>) -> Option<String> {
+    if show_ref && ref_index.is_some() {
+        Some(format!(" [#{}]", ref_index.unwrap()))
+    } else {
+        None
+    }
 }
 
-#[derive(Debug, Ord, Eq, PartialOrd, PartialEq)]
-struct Ref {
-    offset: usize,
-    number: u64, // This is either the reference count (for flag refs)
-                 // or the index into flag ref vector (for serialized refs).
-                 // I tried to make this an enum, but I didn't know how to
-                 // combine the two lists in one vector later on.
+#[derive(Debug, Eq)]
+struct CodeObject {
+    argcount: u32,
+    posonlyargcount: Option<u32>,
+    kwonlyargcount: u32,
+    nlocals: Option<u32>,
+    stacksize: u32,
+    flags: u32,
+    code: Rc<Object>,
+    consts: Rc<Object>,
+    names: Rc<Object>,
+    varnames: Option<Rc<Object>>,
+    freevars: Option<Rc<Object>>,
+    cellvars: Option<Rc<Object>>,
+    localsplusnames: Option<Rc<Object>>,
+    localspluskinds: Option<Rc<Object>>,
+    filename: Rc<Object>,
+    name: Rc<Object>,
+    qualname: Option<Rc<Object>>,
+    firstlineno: u32,
+    linetable: Rc<Object>,
+    exceptiontable: Option<Rc<Object>>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl PartialEq for CodeObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.argcount == other.argcount &&
+            self.posonlyargcount == other.posonlyargcount &&
+            self.kwonlyargcount == other.kwonlyargcount &&
+            self.nlocals == other.nlocals &&
+            self.stacksize == other.stacksize &&
+            self.flags == other.flags &&
+            self.code == other.code &&
+            self.consts == other.consts &&
+            self.names == other.names &&
+            self.varnames == other.varnames &&
+            self.freevars == other.freevars &&
+            self.cellvars == other.cellvars &&
+            self.localsplusnames == other.localsplusnames &&
+            self.localspluskinds == other.localspluskinds &&
+            self.filename == other.filename &&
+            self.name == other.name &&
+            self.qualname == other.qualname &&
+            self.firstlineno == other.firstlineno &&
+            self.linetable == other.linetable &&
+            self.exceptiontable == other.exceptiontable
+    }
+}
+
+impl Hash for CodeObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.argcount.hash(state);
+        self.posonlyargcount.hash(state);
+        self.kwonlyargcount.hash(state);
+        self.nlocals.hash(state);
+        self.stacksize.hash(state);
+        self.flags.hash(state);
+        self.code.hash(state);
+        self.consts.hash(state);
+        self.names.hash(state);
+        self.varnames.hash(state);
+        self.freevars.hash(state);
+        self.cellvars.hash(state);
+        self.localsplusnames.hash(state);
+        self.localspluskinds.hash(state);
+        self.filename.hash(state);
+        self.name.hash(state);
+        self.qualname.hash(state);
+        self.firstlineno.hash(state);
+        self.linetable.hash(state);
+        self.exceptiontable.hash(state);
+    }
+}
+
+impl CodeObject {
+    fn pretty_print_binary_string<W>(
+        w: &mut W,
+        indent: &str,
+        name: &str,
+        mut object: &Rc<Object>,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let ref_info;
+        if let Object::Ref(v) = object.as_ref() {
+            ref_info = format!(
+                "(ref to {}){}",
+                v.number,
+                format_ref(show_ref, &v.ref_index).unwrap_or("".to_string()),
+            );
+            object = &v.target;
+        } else {
+            ref_info = "".to_string()
+        };
+
+        if let Object::String(v) = object.as_ref() {
+            if !v.bytes.is_empty() {
+                return write!(w, "\n{indent}-{name}: {}[{} bytes]", ref_info, v.bytes.len())
+            }
+        }
+        object.pretty_print(w, &format!("\n{indent}-{name}: {}", ref_info), "", true, true)
+    }
+
+    pub fn pretty_print<W>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        suffix: &str,
+        multiline: bool,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        write!(w, "{prefix}Code")?;
+        self.name.pretty_print(w, " ", "", false, true)?;
+        if let Some(v) = &self.qualname {
+            v.pretty_print(w, "/", "", false, true)?;
+        }
+
+        write!(w, " argcount={}", self.argcount)?;
+        if let Some(v) = self.posonlyargcount {
+            write!(w, " posonlyargcount={}", v)?;
+        }
+        write!(w, " kwonlyargcount={}", self.kwonlyargcount)?;
+        if let Some(v) = self.nlocals {
+            write!(w, " nlocals={}", v)?;
+        }
+        write!(w, " stacksize={}", self.stacksize)?;
+        write!(w, " flags={:x}", self.flags)?;
+        if let Some(s) = format_ref(show_ref, &self.ref_index) {
+            write!(w, "{}", s)?;
+        }
+
+        if multiline {
+            let indent = " ".repeat(prefix.len() + 2);
+
+            self.filename.pretty_print(w, &format!("\n{indent}"), "", true, true)?;
+            write!(w, ":{}", self.firstlineno)?;
+
+            // We expect StringVariant::String with bytecode here.
+            // Let's not print that out, since it's not going to be
+            // readable in any way. Otherwise, just print the object.
+            Self::pretty_print_binary_string(w, &indent, "code", &self.code, show_ref)?;
+
+            self.consts.pretty_print(w, &format!("\n{indent}-consts: "), "", true, true)?;
+            self.names.pretty_print(w, &format!("\n{indent}-names: "), "", true, true)?;
+            if let Some(v) = &self.varnames {
+                v.pretty_print(w, &format!("\n{indent}-varnames: "), "", true, true)?;
+            }
+            if let Some(v) = &self.freevars {
+                v.pretty_print(w, &format!("\n{indent}-freevars: "), "", true, true)?;
+            }
+            if let Some(v) = &self.cellvars {
+                v.pretty_print(w, &format!("\n{indent}-cellvars: "), "", true, true)?;
+            }
+            if let Some(v) = &self.localsplusnames {
+                v.pretty_print(w, &format!("\n{indent}-locals+names: "), "", true, true)?;
+            }
+            if let Some(v) = &self.localspluskinds {
+                v.pretty_print(w, &format!("\n{indent}-locals+kinds: "), "", true, true)?;
+            }
+            Self::pretty_print_binary_string(w, &indent, "linetable", &self.linetable, show_ref)?;
+            if let Some(v) = &self.exceptiontable {
+                Self::pretty_print_binary_string(w, &indent, "exceptiontable", v, show_ref)?;
+            }
+        }
+
+        write!(w, "{suffix}")
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+enum StringVariant {
+    ShortAscii,
+    ShortAsciiInterned,
+    String,
+    Interned,
+    Unicode,
+    Ascii,
+    AsciiInterned,
+}
+
+#[derive(Debug, Eq)]
+struct StringObject {
+    variant: StringVariant,
+    bytes: Vec<u8>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl PartialEq for StringObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.variant == other.variant &&
+            self.bytes == other.bytes
+    }
+}
+
+impl Hash for StringObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.variant.hash(state);
+        self.bytes.hash(state);
+    }
+}
+
+impl fmt::Display for StringObject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.variant {
+            StringVariant::ShortAscii |
+            StringVariant::ShortAsciiInterned |
+            StringVariant::Unicode |
+            StringVariant::Ascii |
+            StringVariant::AsciiInterned => {
+                if let Ok(string) = str::from_utf8(&self.bytes) {
+                    write!(f, "{:?}", string)
+                } else {
+                    write!(f, "[NON-UTF8] {:?}", self.bytes)
+                }
+            }
+            StringVariant::String |
+            StringVariant::Interned => {
+                write!(f, "{:?}", self.bytes)
+            }
+        }
+    }
+}
+
+impl StringObject {
+    pub fn pretty_print<W>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        suffix: &str,
+        _multiline: bool,
+        show_ref: bool,
+) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        write!(
+            w, "{prefix}{}{}{suffix}",
+            self,
+            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+        )
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+enum SeqVariant {
+    Tuple,
+    List,
+    Set,
+    FrozenSet,
+}
+
+#[derive(Debug, Eq)]
+struct SeqObject {
+    variant: SeqVariant,
+    items: Vec<Rc<Object>>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl PartialEq for SeqObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.variant == other.variant &&
+            self.items == other.items
+    }
+}
+
+impl Hash for SeqObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.variant.hash(state);
+        self.items.hash(state);
+    }
+}
+
+impl SeqObject {
+    pub fn pretty_print<W>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        suffix: &str,
+        multiline: bool,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let (beg, end);
+        let mut extra_comma = "";
+        let multiline = multiline && self.need_multiline(1);
+        let indent = prefix
+            .chars()
+            .skip_while(|ch| *ch == '\n')
+            .take_while(|ch| ch.is_whitespace())
+            .count();
+
+        match self.variant {
+            SeqVariant::Tuple => {
+                beg = "(";
+                end = ")";
+                if self.items.len() == 1 {
+                    extra_comma = ",";
+                }
+            }
+            SeqVariant::List => {
+                beg = "[";
+                end = "]";
+            }
+            SeqVariant::Set => {
+                if self.items.is_empty() {
+                    beg = "set(";
+                    end = ")";
+                } else {
+                    beg = "{";
+                    end = "}";
+                }
+            }
+            SeqVariant::FrozenSet => {
+                if self.items.is_empty() {
+                    beg = "frozenset(";
+                    end = ")";
+                } else {
+                    beg = "frozenset({";
+                    end = "})";
+                }
+            }
+        }
+
+        write!(w, "{prefix}{beg}")?;
+        for (n, v) in self.items.iter().enumerate() {
+            if multiline {
+                if n == 0 {
+                    writeln!(w)?;
+                }
+                v.pretty_print(
+                    w,
+                    &" ".repeat(indent + 2),
+                    ",\n",
+                    true,
+                    true,
+                )?;
+            } else {
+                v.pretty_print(
+                    w,
+                    if n > 0 { ", " } else { "" },
+                    extra_comma,
+                    false,
+                    true,
+                )?;
+            }
+        }
+
+        write!(
+            w, "{:>width$}{end}{}{suffix}",
+            "",
+            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+            width=multiline as usize * indent,
+        )
+    }
+
+    fn need_multiline(&self, max_nesting: u8) -> bool {
+        max_nesting == 0 ||
+            self.items.len() > 10 ||
+            self.items.iter().any(|x| x.need_multiline(max_nesting - 1))
+    }
+}
+
+#[derive(Debug, Eq)]
+struct DictObject {
+    items: Vec<(Rc<Object>, Rc<Object>)>,
+
+    #[allow(dead_code)]
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl PartialEq for DictObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.items == other.items
+    }
+}
+
+impl Hash for DictObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.items.hash(state);
+    }
+}
+
+impl DictObject {
+    fn need_multiline(&self, max_nesting: u8) -> bool {
+        max_nesting == 0 ||
+            self.items.iter().any(|(x, y)| x.need_multiline(max_nesting - 1) || y.need_multiline(max_nesting - 1))
+    }
+}
+
+#[derive(Debug, Eq)]
+struct RefObject {
+    number: u64,
+
+    target: Rc<Object>,
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl PartialEq for RefObject {
+    // We really care whether the target is the same.
+    // When writing, we'll dereference the Ref to get to the contents.
+
+    fn eq(&self, other: &Self) -> bool {
+        self.target == other.target
+    }
+}
+
+impl Hash for RefObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.target.hash(state);
+    }
+}
+
+impl RefObject {
+    pub fn pretty_print<W>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        suffix: &str,
+        multiline: bool,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let prefix = format!("{prefix}(ref to {}){}",
+                             self.number,
+                             format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()));
+        self.target.pretty_print(w, &prefix, suffix, multiline, false)
+    }
+}
+
+#[derive(Debug, Eq)]
+enum Object {
+    Code(CodeObject),
+    Long(BigInt, Option<usize>),
+    Int(u32, Option<usize>),
+    String(StringObject),
+    Seq(SeqObject),
+    Null(Option<usize>),
+    None(Option<usize>),
+    True(Option<usize>),
+    False(Option<usize>),
+    StopIteration(Option<usize>),
+    Ellipsis(Option<usize>),
+    Float(u64, Option<usize>),        // yes, u64, so Rust allows Eq to be implemented
+    Complex(u64, u64, Option<usize>),
+    Dict(DictObject),
+    Ref(RefObject),
+}
+
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Object::Code(v), Object::Code(w)) => v == w,
+            (Object::Ref(v), Object::Ref(w)) => v == w,
+            (Object::Long(v, _), Object::Long(w, _)) => v == w,
+            (Object::Int(v, _), Object::Int(w, _)) => v == w,
+            (Object::Null(_), Object::Null(_)) => true,
+            (Object::None(_), Object::None(_)) => true,
+            (Object::True(_), Object::True(_)) => true,
+            (Object::False(_),Object::False(_)) => true,
+            (Object::StopIteration(_), Object::StopIteration(_)) => true,
+            (Object::Ellipsis(_), Object::Ellipsis(_)) => true,
+            (Object::Float(v, _), Object::Float(w, _)) => v == w,
+            (Object::Complex(x, y, _), Object::Complex(u, v, _)) => x == u && y == v,
+            (Object::String(v), Object::String(w)) => v == w,
+            (Object::Seq(v), Object::Seq(w)) => v == w,
+            (Object::Dict(v), Object::Dict(w)) => v == w,
+            _ => false,
+        }
+    }
+}
+
+impl Hash for Object {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Object::Code(v) => v.hash(state),
+            Object::String(v) => v.hash(state),
+            Object::Seq(v) => v.hash(state),
+            Object::Ref(v) => v.hash(state),
+            Object::Dict(v) => v.hash(state),
+
+            Object::Long(v, _) => v.hash(state),
+            Object::Int(v, _) => v.hash(state),
+            Object::Null(_) => b'0'.hash(state),
+            Object::None(_) => b'N'.hash(state),
+            Object::True(_) => b'T'.hash(state),
+            Object::False(_) => b'F'.hash(state),
+            Object::StopIteration(_) => b'S'.hash(state),
+            Object::Ellipsis(_) => b'.'.hash(state),
+            Object::Float(v, _) => v.hash(state),
+            Object::Complex(x, y, _) => {
+                x.hash(state);
+                y.hash(state);
+            }
+        }
+    }
+}
+
+impl Object {
+    #[allow(clippy::write_literal)]
+    pub fn pretty_print<W>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        suffix: &str,
+        multiline: bool,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let (s, ref_index) = match self {
+            Object::Code(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+            }
+            Object::String(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+            }
+            Object::Seq(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+            }
+            Object::Ref(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+            }
+            Object::Dict(_) => todo!(),
+
+            Object::Long(v, ref_index) => (format!("{v}"), ref_index),
+            Object::Int(v, ref_index) => (format!("{v}"), ref_index),
+            Object::Null(ref_index) => ("NULL".to_string(), ref_index),
+            Object::None(ref_index) => ("None".to_string(), ref_index),
+            Object::True(ref_index) => ("True".to_string(), ref_index),
+            Object::False(ref_index) => ("False".to_string(), ref_index),
+            Object::StopIteration(ref_index) => ("StopIteration".to_string(), ref_index),
+            Object::Ellipsis(ref_index) => ("...".to_string(), ref_index),
+            Object::Float(v, ref_index) => (format!("{v}"), ref_index),
+            Object::Complex(x, y, ref_index) => (format!("{x}+{y}j"), ref_index),
+        };
+
+        write!(
+            w, "{prefix}{}{}{suffix}",
+            s,
+            format_ref(show_ref, ref_index).unwrap_or("".to_string())
+        )
+    }
+
+    fn need_multiline(&self, max_nesting: u8) -> bool {
+        match self {
+            Object::Code(..) => true,
+            Object::Ref(..) => false,
+            Object::Long(..) |
+            Object::Int(..) |
+            Object::Null(..) |
+            Object::None(..) |
+            Object::True(..) |
+            Object::False(..) |
+            Object::StopIteration(..) |
+            Object::Ellipsis(..) |
+            Object::Float(..) |
+            Object::Complex(..) |
+            Object::String(..) => false,
+            Object::Seq(v) => v.need_multiline(max_nesting),
+            Object::Dict(v) => v.need_multiline(max_nesting),
+        }
+    }
 }
 
 pub struct PycParser {
     input_path: PathBuf,
     pub version: (u32, u32),
+    header_length: usize,
 
     data: Vec<u8>,      // the whole contents of the input file
     read_offset: usize, // index into .data
 
-    irefs: Vec<Ref>,
-    flag_refs: Vec<Ref>,
+    flag_refs: Vec<Option<Rc<Object>>>, // objects that have been flagged to be referenced
 }
 
 impl PycParser {
-    pub fn from_file(input_path: &Path, mut input: impl Read) -> Result<Self> {
+    pub fn from_file(input_path: &Path, mut input: impl io::Read) -> Result<Self> {
         let mut buf = [0; 4];
         input.read_exact(&mut buf)?;
 
@@ -384,14 +924,15 @@ impl PycParser {
         let pyc = PycParser {
             input_path: input_path.to_path_buf(),
             version,
+            header_length,
             data,
             read_offset: header_length,
-            irefs: Vec::new(),
             flag_refs: Vec::new(),
         };
 
         let mtime = pyc.py_content_mtime();
-        debug!("{}: from py with mtime={} ({}), size={} bytes, {}",
+        // 'size' seems to be the count of serialized objects, excluding TYPE_REF
+        debug!("{}: from py with mtime={} ({}), size={} entries, {}",
                input_path.display(),
                mtime,
                chrono::DateTime::from_timestamp(mtime as i64, 0).unwrap(),
@@ -444,64 +985,83 @@ impl PycParser {
         Ok((offset, self.data[offset]))
     }
 
-    fn read_object(&mut self) -> Result<Object> {
+    fn read_object(&mut self) -> Result<Rc<Object>> {
+        let ref_index: Option<usize>;
         let (offset, mut b) = self._read_byte()?;
 
-        if (b & (0x1 << 7)) != 0 {
-            b &= !(0x1 << 7);
+        if (b & FLAG_REF_BIT) != 0 {
+            // This object has been flagged for future references. We
+            // put it on the list of objects which can be referred to
+            // later by index in the pyc stream.
+            b &= !FLAG_REF_BIT;
 
-            self.flag_refs.push(Ref { offset, number: 0 });
+            // We reserve the reference index number early.
+            // We'll put the constructed object into the slot later.
+            ref_index = Some(self.flag_refs.len());
+            self.flag_refs.push(None);
+        } else {
+            ref_index = None;
         }
 
         if TRACE {
-            debug!("{}:{}: type {}", self.input_path.display(), offset, b);
+            debug!("{}:{}/0x{:x}: type {:?}{}",
+                   self.input_path.display(), offset, offset,
+                   b as char,
+                   ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)),
+            );
         }
 
         let obj = match b {
-            b'0' => Object::Null,
-            b'N' => Object::None,
-            b'F' => Object::False,
-            b'T' => Object::True,
-            b'.' => Object::Ellipsis,
-            b'S' => Object::StopIteration,
+            b'0' => Rc::new(Object::Null(ref_index)),
+            b'N' => Rc::new(Object::None(ref_index)),
+            b'F' => Rc::new(Object::False(ref_index)),
+            b'T' => Rc::new(Object::True(ref_index)),
+            b'.' => Rc::new(Object::Ellipsis(ref_index)),
+            b'S' => Rc::new(Object::StopIteration(ref_index)),
 
             b'c'    // CODE
-                => self.read_codeobject()?,
+                => self.read_codeobject(ref_index)?,
             b'g'    // BINARY_FLOAT
-                => self.read_binary_float()?,
+                => self.read_binary_float(ref_index)?,
             b'i'    // INT
-                => self.read_long()?,
+                => self.read_long(ref_index)?,
             b'l'    // LONG
-                => self.read_py_long()?,
+                => self.read_py_long(ref_index)?,
+            b'y'    // BINARY_COMPLEX
+                => self.read_binary_complex(ref_index)?,
 
             b'r'    // REF
-                => self.read_ref(offset)?,
+                => self.read_ref(ref_index)?,
 
-            b's' |  // STRING
-            b't' |  // INTERNED
-            b'u' |  // UNICODE
-            b'a' |  // ASCII
-            b'A'    // ASCII_INTERNED
-                => self.read_string(false)?,
-
-            b'y'    // BINARY_COMPLEX
-                => self.read_binary_complex()?,
-
-            b'z' |  // SHORT_ASCII
+            b'z'    // SHORT_ASCII
+                => self.read_string(StringVariant::ShortAscii, ref_index)?,
             b'Z'    // SHORT_ASCII_INTERNED
-                => self.read_string(true)?,
+                => self.read_string(StringVariant::ShortAsciiInterned, ref_index)?,
+            b's'    // STRING
+                => self.read_string(StringVariant::String, ref_index)?,
+            b't'    // INTERNED
+                => self.read_string(StringVariant::Interned, ref_index)?,
+            b'u'    // UNICODE
+                => self.read_string(StringVariant::Unicode, ref_index)?,
+            b'a'    // ASCII
+                => self.read_string(StringVariant::Ascii, ref_index)?,
+            b'A'    // ASCII_INTERNED
+                => self.read_string(StringVariant::AsciiInterned, ref_index)?,
 
             b')'    // SMALL_TUPLE
-                => self.read_small_tuple()?,
+                => self.read_small_tuple(ref_index)?,
 
-            b'(' |  // TUPLE
-            b'[' |  // LIST
-            b'<' |  // SET
+            b'('    // TUPLE
+                => self.read_seq(SeqVariant::Tuple, ref_index)?,
+            b'['    // LIST
+                => self.read_seq(SeqVariant::List, ref_index)?,
+            b'<'    // SET
+                => self.read_seq(SeqVariant::Set, ref_index)?,
             b'>'    // FROZEN_SET
-                => self.read_seq(b)?,
+                => self.read_seq(SeqVariant::FrozenSet, ref_index)?,
 
             b'{'    // DICT
-                => self.read_dict()?,
+                => self.read_dict(ref_index)?,
 
             b'I' |  // INT64
             b'f' |  // FLOAT
@@ -524,44 +1084,50 @@ impl PycParser {
             dbg!(&obj);
         }
 
+        if let Some(ref_index) = ref_index {
+            assert!(self.flag_refs[ref_index].is_none());
+            self.flag_refs[ref_index] = Some(obj.clone());
+        }
+
         Ok(obj)
     }
 
-    fn maybe_read_long(&mut self, cond: bool) -> Result<Option<u32>> {
+    fn _maybe_read_long(&mut self, cond: bool) -> Result<Option<u32>> {
         Ok(if cond { Some(self._read_long()?) } else { None })
     }
 
-    fn maybe_read_object(&mut self, cond: bool) -> Result<Option<Box<Object>>> {
+    fn maybe_read_object(&mut self, cond: bool) -> Result<Option<Rc<Object>>> {
         Ok(if cond {
-            Some(Box::new(self.read_object()?))
+            Some(self.read_object()?)
         } else {
             None
         })
     }
 
-    fn read_codeobject(&mut self) -> Result<Object> {
-        Ok(Object::Code {
+    fn read_codeobject(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Code(CodeObject {
             argcount: self._read_long()?,
-            posonlyargcount: self.maybe_read_long(self.version >= (3, 8))?,
+            posonlyargcount: self._maybe_read_long(self.version >= (3, 8))?,
             kwonlyargcount: self._read_long()?,
-            nlocals: self.maybe_read_long(self.version < (3, 11))?,
+            nlocals: self._maybe_read_long(self.version < (3, 11))?,
             stacksize: self._read_long()?,
             flags: self._read_long()?,
-            code: Box::new(self.read_object()?),
-            consts: Box::new(self.read_object()?),
-            names: Box::new(self.read_object()?),
+            code: self.read_object()?,
+            consts: self.read_object()?,
+            names: self.read_object()?,
             varnames: self.maybe_read_object(self.version < (3, 11))?,
             freevars: self.maybe_read_object(self.version < (3, 11))?,
             cellvars: self.maybe_read_object(self.version < (3, 11))?,
             localsplusnames: self.maybe_read_object(self.version >= (3, 11))?,
             localspluskinds: self.maybe_read_object(self.version >= (3, 11))?,
-            filename: Box::new(self.read_object()?),
-            name: Box::new(self.read_object()?),
+            filename: self.read_object()?,
+            name: self.read_object()?,
             qualname: self.maybe_read_object(self.version >= (3, 11))?,
             firstlineno: self._read_long()?,
-            linetable: Box::new(self.read_object()?),
+            linetable: self.read_object()?,
             exceptiontable: self.maybe_read_object(self.version >= (3, 11))?,
-        })
+            ref_index,
+        })))
     }
 
     fn _read_long_at(&self, offset: usize) -> u32 {
@@ -580,8 +1146,8 @@ impl PycParser {
         Ok(i32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
-    fn read_long(&mut self) -> Result<Object> {
-        Ok(Object::Int(self._read_long()?))
+    fn read_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Int(self._read_long()?, ref_index)))
     }
 
     fn _read_short(&mut self) -> Result<i32> {
@@ -592,7 +1158,7 @@ impl PycParser {
         Ok(x | -(x & 0x8000))
     }
 
-    fn read_py_long(&mut self) -> Result<Object> {
+    fn read_py_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let n = self._read_long_signed()?;
 
         let mut result = 0_i32.to_bigint().unwrap();
@@ -601,62 +1167,80 @@ impl PycParser {
             result += part.to_bigint().unwrap() << (i * PYLONG_MARSHAL_SHIFT) as usize;
         }
 
-        Ok(Object::Long(result * n.signum()))
+        Ok(Rc::new(Object::Long(result * n.signum(), ref_index)))
     }
 
-    fn read_string(&mut self, short: bool) -> Result<Object> {
-        let size = if short {
+    fn read_string(&mut self, variant: StringVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        let size = match variant {
             // short == size is stored as one byte
-            self._read_byte()?.1 as usize
-        } else {
+            StringVariant::ShortAscii |
+            StringVariant::ShortAsciiInterned
+                => self._read_byte()?.1 as usize,
             // non-short == size is stored as long (4 bytes)
-            self._read_long()? as usize
+            StringVariant::String |
+            StringVariant::Interned |
+            StringVariant::Unicode |
+            StringVariant::Ascii |
+            StringVariant::AsciiInterned
+                => self._read_long()? as usize,
         };
 
         let offset = self.take(size)?;
-        Ok(Object::String(self.data[offset .. offset + size].to_vec()))
-
-        // let string = str::from_utf8(&bytes)?;
-        // Ok(Object::String(string.to_string()))
+        Ok(Rc::new(Object::String(StringObject {
+            variant,
+            bytes: self.data[offset .. offset + size].to_vec(),
+            ref_index,
+        })))
     }
 
-    fn _read_tuple(&mut self, size: u64) -> Result<Object> {
-        let mut ans = Vec::new();
+    fn _read_tuple(&mut self, variant: SeqVariant, size: u64, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        let mut items = Vec::new();
         for _ in 0..size {
-            ans.push(self.read_object()?);
+            items.push(self.read_object()?);
         }
 
-        Ok(Object::Tuple(ans))
+        Ok(Rc::new(Object::Seq(SeqObject { variant, items, ref_index })))
     }
 
-    fn read_small_tuple(&mut self) -> Result<Object> {
+    fn read_small_tuple(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         // small tuple — size is only one byte
         let size = self._read_byte()?.1;
-        self._read_tuple(size as u64)
+        self._read_tuple(SeqVariant::Tuple, size as u64, ref_index)
     }
 
-    fn read_seq(&mut self, _typ: u8) -> Result<Object> {
+    fn read_seq(&mut self, variant: SeqVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let size = self._read_long()?;
-        self._read_tuple(size as u64)
+        self._read_tuple(variant, size as u64, ref_index)
     }
 
-    fn read_ref(&mut self, offset: usize) -> Result<Object> {
+    fn read_ref(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
         let index = self._read_long()?;
 
         // Is this a valid reference to one of the already-flagged objects?
         if index as usize >= self.flag_refs.len() {
             return Err(super::Error::Other(
-                format!("{}:0x{:x}: bad reference to flag_ref {} (have {})",
-                        self.input_path.display(), self.read_offset,
+                format!("{}:{}/0x{:x}: bad reference to flag_ref {} (have {})",
+                        self.input_path.display(), self.read_offset, self.read_offset,
                         index, self.flag_refs.len())
             ).into());
         }
 
-        self.flag_refs[index as usize].number += 1;
-        self.irefs.push(Ref { offset, number: index as u64 });
+        let target = match &self.flag_refs[index as usize] {
+            None => {
+                return Err(super::Error::Other(
+                    format!("{}:{}/0x{:x}: bad reference to flag_ref {} (reference from within)",
+                            self.input_path.display(), self.read_offset, self.read_offset,
+                            index)
+                ).into());
+            }
+            Some(v) => v
+        };
 
-        let desc = format!("REF to index {}", index);
-        Ok(Object::Ref(desc))
+        Ok(Rc::new(Object::Ref(RefObject {
+            number: index as u64,
+            target: target.clone(),
+            ref_index,
+        })))
     }
 
     fn _read_binary_float(&mut self) -> Result<f64> {
@@ -665,82 +1249,35 @@ impl PycParser {
         Ok(f64::from_le_bytes(bytes.try_into().unwrap()))
     }
 
-    fn read_binary_float(&mut self) -> Result<Object> {
-        Ok(Object::Float(self._read_binary_float()?))
+    fn read_binary_float(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Float(
+            self._read_binary_float()?.to_bits(),
+            ref_index,
+        )))
     }
 
-    fn read_binary_complex(&mut self) -> Result<Object> {
-        Ok(Object::Complex(self._read_binary_float()?,
-                           self._read_binary_float()?))
+    fn read_binary_complex(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Rc::new(Object::Complex(
+            self._read_binary_float()?.to_bits(),
+            self._read_binary_float()?.to_bits(),
+            ref_index,
+        )))
     }
 
-    fn read_dict(&mut self) -> Result<Object> {
-        let mut dict = Vec::new();
+    fn read_dict(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        let mut items = Vec::new();
 
         loop {
             let key = self.read_object()?;
-            if let Object::Null = key {
+            if let Object::Null(..) = *key {
                 break;
             }
 
             let value = self.read_object()?;
-            dict.push((key, value));
+            items.push((key, value));
         }
 
-        Ok(Object::Dict(dict))
-    }
-
-    fn clear_unused_flag_refs(&mut self) -> Result<bool> {
-        // Sequence of flag_refs and irefs ordered by number of byte in a file
-        let final_list =
-            iter::zip(self.flag_refs.iter(), iter::repeat(true))
-            .merge_by(iter::zip(self.irefs.iter(), iter::repeat(false)),
-                      |&a, &b| a.0.offset < b.0.offset);
-
-        // A map where at a beginning, index in list == number of flag_ref
-        // but when unused flag is removed:
-        // - numbers in the list are original numbers of flag_refs
-        // - indices of the list are new numbers
-        let flag_ref_count = self.flag_refs.len();
-        let mut flag_ref_map = (0..flag_ref_count).collect::<Vec<_>>();
-
-        // new mutable content
-        let mut data = self.data.clone();
-
-        let mut removed_count = 0;
-        for (r, is_flag) in final_list {
-            // Clear FLAG_REF bit and remove it from map.
-            // all subsequent refs will have lower index in the map.
-            if is_flag {
-                if r.number == 0 {
-                    let index = self.flag_refs.binary_search(r).unwrap();
-                    let index_index = flag_ref_map.binary_search(&index).unwrap();
-                    flag_ref_map.remove(index_index);
-                    assert!(data[r.offset] & (1 << 7) > 0);
-                    data[r.offset] &= !(1 << 7);
-                    removed_count += 1;
-                }
-            } else {
-                let index = r.number as usize;
-                let new_index = flag_ref_map.binary_search(&index);
-                if new_index.is_err() {
-                    dbg!(&flag_ref_map);
-                    dbg!(&r.number);
-                }
-                let new_index = new_index.unwrap() as u32;
-
-                data[r.offset + 1 .. r.offset + 5]
-                    .copy_from_slice(&new_index.to_le_bytes());
-            }
-        }
-
-        debug!("{}: removed {} unused FLAG_REFs", self.input_path.display(), removed_count);
-        assert_eq!(data == self.data, removed_count == 0);
-        if removed_count > 0 {
-            self.data = data;
-        }
-
-        Ok(removed_count > 0)
+        Ok(Rc::new(Object::Dict(DictObject { items, ref_index } )))
     }
 
     fn set_zero_mtime(&mut self) -> Result<bool> {
@@ -758,14 +1295,348 @@ impl PycParser {
     }
 }
 
+type SeenState = (usize, usize, RefCell<Option<usize>>);
+
+struct PycWriter {
+    buffer: Vec<u8>,
+    seen: HashMap<Rc<Object>, SeenState>, // map object -> (offset, reference count, ref_index)
+    flag_index: usize,
+    refs_to_fix: HashMap<usize, Rc<Object>>, // map offsets to ref -> object
+    entry_count: usize,
+}
+
+impl PycWriter {
+    fn new(header: &[u8]) -> Self {
+        Self {
+            buffer: Vec::from(header),
+            seen: HashMap::new(),
+            flag_index: 0,
+            refs_to_fix: HashMap::new(),
+            entry_count: 0,
+        }
+    }
+
+    fn to_buffer(parser: &PycParser, code: &Rc<Object>) -> Vec<u8> {
+        // Copy the header from original file
+        let mut w = PycWriter::new(
+            &parser.data[..parser.header_length],
+        );
+
+        w.write_object(code);
+        w.add_ref_flags();
+        w.fix_refs();
+        w.fix_entry_count(parser.version);
+
+        // TODO: overwrite content hash if present
+        w.buffer
+    }
+
+    fn write_object(&mut self, object: &Rc<Object>) {
+        if let Object::Ref(v) = &**object {
+            self.write_object(&v.target);
+
+        } else if self.seen.contains_key(object) {
+            if TRACE {
+                debug!("Referencing {:?} -> {:?}", object, self.seen[object]);
+            }
+
+            self.seen.entry(object.clone()).and_modify(|tup| tup.1 += 1);
+            self.write_ref(object.clone());
+
+        } else {
+            let offset = self.buffer.len();
+            self.entry_count += 1;
+
+            match &**object {
+                // Those end up in the index
+                Object::Code(v) => {
+                    self.write_code(v);
+                },
+                Object::String(v) => {
+                    self.write_string(v);
+                },
+                Object::Seq(v) => {
+                    self.write_seq(v);
+                }
+                Object::Dict(_) => todo!(),
+                // mind null termination!
+
+                Object::Long(v, _) => {
+                    self.write_long(v);
+                }
+                Object::Int(v, _) => {
+                    self.write_int(*v);
+                }
+                Object::Float(v, _) => {
+                    self.write_binary_float(*v);
+                }
+                Object::Complex(x, y, _) => {
+                    self.write_binary_complex(*x, *y);
+                }
+
+                // Those are not in the index. The reference takes as
+                // many bytes or more to write as the object itself.
+                Object::Ref(_) => {
+                    panic!(); // already handled above.
+                }
+                Object::Null(_) => {
+                    return self.buffer.push(b'0');
+                }
+                Object::None(_) => {
+                    return self.buffer.push(b'N');
+                }
+                Object::False(_) =>  {
+                    return self.buffer.push(b'F');
+                }
+                Object::True(_) =>  {
+                    return self.buffer.push(b'T');
+                }
+                Object::StopIteration(_) =>  {
+                    return self.buffer.push(b'S');
+                }
+                Object::Ellipsis(_) =>  {
+                    return self.buffer.push(b'.');
+                }
+            }
+
+            self.seen.insert(object.clone(), (offset, 0, None.into()));
+        }
+    }
+
+    fn maybe_write_object(&mut self, object: &Option<Rc<Object>>) {
+        if let Some(object) = object {
+            self.write_object(object);
+        }
+    }
+
+    fn write_code(&mut self, code: &CodeObject) {
+        self.buffer.push(b'c');
+
+        // When reading, the list of fields that are read depends on
+        // the version. In the opposite direction, we skip fields
+        // which are None and write anything that is Some. We write
+        // the bytecode in the same version that was read. If this is
+        // ever changed, we'd need to conditonalize here similarly as
+        // when reading.
+
+        self._write_int(code.argcount);
+        self._maybe_write_int(code.posonlyargcount);
+        self._write_int(code.kwonlyargcount);
+        self._maybe_write_int(code.nlocals);
+        self._write_int(code.stacksize);
+        self._write_int(code.flags);
+        self.write_object(&code.code);
+        self.write_object(&code.consts);
+        self.write_object(&code.names);
+        self.maybe_write_object(&code.varnames);
+        self.maybe_write_object(&code.freevars);
+        self.maybe_write_object(&code.cellvars);
+
+        self.maybe_write_object(&code.localsplusnames);
+        self.maybe_write_object(&code.localspluskinds);
+
+        self.write_object(&code.filename);
+        self.write_object(&code.name);
+
+        self.maybe_write_object(&code.qualname);
+
+        self._write_int(code.firstlineno);
+
+        self.write_object(&code.linetable);
+        self.maybe_write_object(&code.exceptiontable);
+    }
+
+    fn write_string(&mut self, string: &StringObject) {
+        self.buffer.push(
+            match string.variant {
+                StringVariant::ShortAscii         => b'z',
+                StringVariant::ShortAsciiInterned => b'Z',
+                StringVariant::String             => b's',
+                StringVariant::Interned           => b't',
+                StringVariant::Unicode            => b'u',
+                StringVariant::Ascii              => b'a',
+                StringVariant::AsciiInterned      => b'A',
+            }
+        );
+
+        let len = string.bytes.len();
+        match string.variant {
+            // short == size is stored as one byte
+            StringVariant::ShortAscii |
+            StringVariant::ShortAsciiInterned => {
+                self.buffer.push(len as u8);
+            }
+            // non-short == size is stored as long (4 bytes)
+            StringVariant::String |
+            StringVariant::Interned |
+            StringVariant::Unicode |
+            StringVariant::Ascii |
+            StringVariant::AsciiInterned => {
+                self._write_int(len as u32);
+            }
+        };
+
+        self.buffer.extend_from_slice(&string.bytes);
+    }
+
+    fn write_seq(&mut self, seq: &SeqObject) {
+        let len = seq.items.len();
+        let byte = match seq.variant {
+            SeqVariant::Tuple => {
+                if len < 256 {
+                    b')'  // SMALL_TUPLE
+                } else {
+                    b'('  // TUPLE
+                }
+            }
+            SeqVariant::List      => b'[',
+            SeqVariant::Set       => b'<',
+            SeqVariant::FrozenSet => b'>',
+        };
+
+        self.buffer.push(byte);
+
+        if byte == b')' {
+            self.buffer.push(len as u8);
+        } else {
+            self._write_int(len as u32);
+        }
+
+        for item in seq.items.iter() {
+            self.write_object(item);
+        }
+    }
+
+    fn _write_int(&mut self, int: u32) {
+        let bytes = int.to_le_bytes();
+        self.buffer.extend_from_slice(&bytes);
+    }
+
+    fn _write_signed_int(&mut self, int: i32) {
+        let bytes = int.to_le_bytes();
+        self.buffer.extend_from_slice(&bytes);
+    }
+
+    fn _maybe_write_int(&mut self, int: Option<u32>) {
+        if let Some(int) = int {
+            self._write_int(int);
+        }
+    }
+
+    fn write_int(&mut self, int: u32) {
+        self.buffer.push(b'i');
+        self._write_int(int);
+    }
+
+    fn _write_short(&mut self, int: u16) {
+        let bytes = int.to_le_bytes();
+        self.buffer.extend_from_slice(&bytes);
+    }
+
+    fn write_long(&mut self, long: &BigInt) {
+        self.buffer.push(b'l');
+
+        let n = long.bits().div_ceil(PYLONG_MARSHAL_SHIFT as usize);
+        let sign = if *long < BigInt::zero() { -1i32 } else { 1i32 };
+
+        self._write_signed_int(n as i32 * sign);
+
+        let mut val = long.abs();
+        let div = BigInt::from(1u16 << PYLONG_MARSHAL_SHIFT);
+        for _ in 0 .. n {
+            let (q, r) = val.div_rem(&div);
+            self._write_short(r.to_u16().unwrap());
+            val = q;
+        }
+        assert!(val.is_zero());
+    }
+
+    fn _write_binary_float(&mut self, float: u64) {
+        let bytes = f64::from_bits(float).to_le_bytes();
+        self.buffer.extend_from_slice(&bytes);
+    }
+
+    fn write_binary_float(&mut self, float: u64) {
+        self.buffer.push(b'g');
+        self._write_binary_float(float);
+    }
+
+    fn write_binary_complex(&mut self, x: u64, y: u64) {
+        self.buffer.push(b'y');
+        self._write_binary_float(x);
+        self._write_binary_float(y);
+    }
+
+    fn write_ref(&mut self, target: Rc<Object>) {
+        let offset = self.buffer.len();
+        self.buffer.push(b'r');
+        self._write_int(0);  // We'll fix the reference number later
+        self.refs_to_fix.insert(offset, target);
+    }
+
+    fn add_ref_flags(&mut self) {
+        let mut keys: Vec<_> = self.seen.keys().collect();
+        keys.sort_by_key(|&e| self.seen[e].0);
+
+        for entry in keys {
+            let (offset, count, index) = &self.seen[entry];
+            assert!(index.borrow().is_none());
+
+            if *count > 0 {
+                let orig = self.buffer[*offset];
+                if TRACE {
+                    debug!("Flagged {:?}, offset {}/{:x}, adding flag #{} ({} refs)",
+                           entry, offset, offset, self.flag_index, count);
+                }
+
+                assert!("0NFT.ScgilyrzZstuaA)([<>{".contains(orig as char));
+                self.buffer[*offset] |= FLAG_REF_BIT;
+
+                index.replace(Some(self.flag_index));
+
+                self.flag_index += 1;
+            }
+        }
+    }
+
+    fn fix_refs(&mut self) {
+        for (offset, target) in &self.refs_to_fix {
+            let (target_offset, count, index) = &self.seen[target];
+            if TRACE {
+                debug!("Ref at offset {}, setting target {}/0x{:x} {:?} #{:?} ({} refs)",
+                       offset, target_offset, target_offset, target, index, count);
+            }
+            assert!(*count > 0);
+            let index = index.borrow().unwrap();
+            assert!(index < self.flag_index);
+            assert!(offset > target_offset);
+
+            assert!(self.buffer[*offset] == b'r');
+            let bytes = &mut self.buffer[offset + 1 .. offset + 5];
+            assert!(bytes == [0; 4]);
+            bytes.copy_from_slice(&(index as u32).to_le_bytes());
+        }
+    }
+
+    fn fix_entry_count(&mut self, version: (u32, u32)) {
+        let size_offset = if version < (3, 7) { 8 } else { 12 };
+        let size = self.entry_count as u32;
+        self.buffer[size_offset .. size_offset + 4].copy_from_slice(&size.to_le_bytes());
+    }
+}
+
 
 pub struct Pyc {
     config: Rc<config::Config>,
 }
 
 impl Pyc {
+    pub fn new(config: &Rc<config::Config>) -> Self {
+        Self { config: config.clone() }
+    }
+
     pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self { config: config.clone() })
+        Box::new(Self::new(config))
     }
 }
 
@@ -775,7 +1646,7 @@ impl super::Processor for Pyc {
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(path.extension().is_some_and(|x| x == "pyc"))
+        Ok(self.config.ignore_extension || path.extension().is_some_and(|x| x == "pyc"))
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
@@ -785,19 +1656,42 @@ impl super::Processor for Pyc {
         if parser.version < (3, 0) {
             return Ok(super::ProcessResult::Noop);  // We don't want to touch python2 files
         }
+        if parser.py_content_hash().is_some() {
+            return Err(super::Error::Other(
+                "pyc file with hash invalidation are not supported".to_string()
+            ).into());
+        }
 
-        parser.read_object()?;
+        let code = parser.read_object()?;
+        let new = PycWriter::to_buffer(&parser, &code);
 
-        let have_mod = parser.clear_unused_flag_refs()?;
+        let have_mod = new != parser.data;
+
         if have_mod {
             io.open_output()?;
-            io.output.as_mut().unwrap().write_all(&parser.data)?;
+            io.output.as_mut().unwrap().write_all(&new)?;
         }
 
         io.finalize(have_mod)
     }
 }
 
+impl Pyc {
+    pub fn pretty_print<W>(&self, writer: &mut W, input_path: &Path) -> Result<()>
+    where
+        W: fmt::Write,
+    {
+        let input = File::open(input_path)
+            .with_context(|| format!("Cannot open {:?}", input_path))?;
+        let mut parser = PycParser::from_file(input_path, input)?;
+
+        let obj = parser.read_object()?;
+
+        obj.pretty_print(writer, "", "\n", true, true)?;
+
+        Ok(())
+    }
+}
 
 pub struct PycZeroMtime {
     config: Rc<config::Config>,
@@ -848,7 +1742,7 @@ impl super::Processor for PycZeroMtime {
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(path.extension().is_some_and(|x| x == "pyc"))
+        Ok(self.config.ignore_extension || path.extension().is_some_and(|x| x == "pyc"))
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {

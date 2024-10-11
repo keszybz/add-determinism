@@ -12,10 +12,10 @@ use super::{prepare_dir, make_handler, test_corpus_file};
 
 #[test]
 fn test_pyc_header() {
-    for p in [
-        "tests/cases/adapters.cpython-312.pyc",
-        "tests/cases/adapters.cpython-312.opt-1.pyc",
-        "tests/cases/adapters.cpython-312~fixed.pyc",
+    for (p, size) in [
+        ("tests/cases/adapters.cpython-312.pyc", 16602),
+        ("tests/cases/adapters.cpython-312.opt-1.pyc", 16602),
+        ("tests/cases/adapters.cpython-312~fixed.pyc", 550),
     ] {
         let p = Path::new(p);
 
@@ -23,7 +23,7 @@ fn test_pyc_header() {
         assert_eq!(parser.version, (3, 12));
         assert_eq!(parser.py_content_hash(), None);
         assert_eq!(parser.py_content_mtime(), 1710422792);
-        assert_eq!(parser.py_content_size(), 16602);
+        assert_eq!(parser.py_content_size(), size);
     }
 }
 
@@ -109,7 +109,7 @@ fn test_adapters_opt_1() {
 
 
 #[test]
-fn test_testrelro_fixed() {
+fn test_adapters_fixed() {
     let (_dir, input) = prepare_dir("tests/cases/adapters.cpython-312~fixed.pyc").unwrap();
 
     let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
@@ -124,6 +124,18 @@ fn test_testrelro_fixed() {
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
     assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_eq!(orig.st_ino(), new.st_ino());
+}
+
+#[test]
+fn test_pyc_file_with_dict() {
+    let pyc = make_handler(12345678, false, pyc::Pyc::boxed).unwrap();
+    test_corpus_file(pyc, "tests/cases/dicto.cpython-313.pyc");
+}
+
+#[test]
+fn test_pyc_file_with_list() {
+    let pyc = make_handler(12345679, false, pyc::Pyc::boxed).unwrap();
+    test_corpus_file(pyc, "tests/cases/listo.cpython-313.pyc");
 }
 
 #[test]

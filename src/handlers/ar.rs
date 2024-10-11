@@ -54,7 +54,7 @@ impl super::Processor for Ar {
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(path.extension().is_some_and(|x| x == "a"))
+        Ok(self.config.ignore_extension || path.extension().is_some_and(|x| x == "a"))
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {

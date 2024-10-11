@@ -10,6 +10,7 @@ use log::{log, debug, info, warn, Level};
 use serde::{Serialize, Deserialize};
 use std::ascii::escape_default;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::{File, Metadata};
@@ -216,6 +217,22 @@ pub fn make_handlers(config: &Rc<config::Config>) -> Result<Vec<Box<dyn Processo
 
 pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
+}
+
+pub fn do_print(config: &Rc<config::Config>) -> Result<()> {
+    let handler = pyc::Pyc::new(config);
+    let mut w = String::new();
+
+    for (n, input_path) in config.inputs.iter().enumerate() {
+        if n > 0 {
+            writeln!(w)?;  // separate outputs by empty line
+        }
+        handler.pretty_print(&mut w, input_path)?;
+    }
+
+    print!("{}", w);
+
+    Ok(())
 }
 
 pub fn do_normal_work(config: &Rc<config::Config>) -> Result<Stats> {
