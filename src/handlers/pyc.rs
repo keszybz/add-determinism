@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::{bail, Context, Result};
-use log::debug;
+use log::{debug, warn};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -1663,8 +1663,13 @@ impl super::Processor for Pyc {
         }
 
         let code = parser.read_object()?;
-        let new = PycWriter::to_buffer(&parser, &code);
 
+        let trailing = parser.data.len() - parser.read_offset;
+        if trailing > 0 {
+            warn!("{}: found trailing garbage ({} bytes)", input_path.display(), trailing);
+        }
+
+        let new = PycWriter::to_buffer(&parser, &code);
         let have_mod = new != parser.data;
 
         if have_mod {
