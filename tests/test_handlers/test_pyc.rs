@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+use std::io::Read;
 use std::fs;
 use std::fs::File;
 use std::os::linux::fs::MetadataExt;
@@ -80,12 +81,24 @@ fn test_adapters_hardlinked() {
 
     fs::hard_link(&*input, (*input).with_extension("pyc.evenbetter")).unwrap();
 
+    let mut data_expected = vec![];
+    File::open("tests/cases/adapters.cpython-312~fixed.pyc")
+        .unwrap()
+        .read_to_end(&mut data_expected)
+        .unwrap();
+
     assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Rewritten);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
     assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_eq!(orig.st_ino(), new.st_ino());
+
+    let mut data_output: Vec<u8> = vec![];
+    File::open(&*input).unwrap()
+        .read_to_end(&mut data_output).unwrap();
+
+    assert_eq!(data_output, data_expected);
 }
 
 #[test]
