@@ -526,7 +526,9 @@ impl<'a> InputOutputHelper<'a> {
                     output.seek(io::SeekFrom::Start(0))?;
 
                     let mut input_writer = File::options().write(true).open(self.input_path)?;
-                    io::copy(output, &mut input_writer)?;
+                    let len = io::copy(output, &mut input_writer)?;
+                    // truncate the file in case it was originally longer
+                    input_writer.set_len(len)?;
                     input_writer.set_modified(meta.modified()?)?;
                 }
 
