@@ -8,7 +8,7 @@ mod test_pyc_zero_mtime;
 
 use anyhow::Result;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -139,6 +139,18 @@ fn test_corpus_file(handler: Box<dyn handlers::Processor>, filename: &str) {
     } else {
         handlers::ProcessResult::Noop
     };
+
+    // If the filename starts with 'z', and we would rewrite the file anyway,
+    // append garbage to test that this case is handled properly.
+    if have_mod == handlers::ProcessResult::Replaced
+        && filename.file_name().unwrap().to_str().unwrap().starts_with('z') {
+            fs::File::options()
+                .append(true)
+                .open(&*input)
+                .unwrap()
+                .write(&[b'x', b'y', b'_', b'_'])
+                .unwrap();
+    }
 
     assert!(handler.filter(&*input).unwrap());
     assert_eq!(handler.process(&*input).unwrap(), have_mod);
