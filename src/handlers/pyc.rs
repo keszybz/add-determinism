@@ -932,7 +932,7 @@ impl PycParser {
 
         let mtime = pyc.py_content_mtime();
         // 'size' seems to be the count of serialized objects, excluding TYPE_REF
-        debug!("{}: from py with mtime={} ({}), size={} entries, {}",
+        debug!("{}: from py with mtime={} ({}), size={} bytes, {}",
                input_path.display(),
                mtime,
                chrono::DateTime::from_timestamp(mtime as i64, 0).unwrap(),
@@ -1325,7 +1325,6 @@ impl PycWriter {
         w.write_object(code);
         w.add_ref_flags();
         w.fix_refs();
-        w.fix_entry_count(parser.version);
 
         // TODO: overwrite content hash if present
         w.buffer
@@ -1616,12 +1615,6 @@ impl PycWriter {
             assert!(bytes == [0; 4]);
             bytes.copy_from_slice(&(index as u32).to_le_bytes());
         }
-    }
-
-    fn fix_entry_count(&mut self, version: (u32, u32)) {
-        let size_offset = if version < (3, 7) { 8 } else { 12 };
-        let size = self.entry_count as u32;
-        self.buffer[size_offset .. size_offset + 4].copy_from_slice(&size.to_le_bytes());
     }
 }
 
