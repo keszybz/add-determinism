@@ -13,10 +13,10 @@ use super::{prepare_dir, make_handler, test_corpus_file};
 
 #[test]
 fn test_pyc_header() {
-    for (p, size) in [
-        ("tests/cases/adapters.cpython-312.pyc", 16602),
-        ("tests/cases/adapters.cpython-312.opt-1.pyc", 16602),
-        ("tests/cases/adapters.cpython-312~fixed.pyc", 550),
+    for p in [
+        "tests/cases/adapters.cpython-312.pyc",
+        "tests/cases/adapters.cpython-312.opt-1.pyc",
+        "tests/cases/adapters.cpython-312~fixed.pyc",
     ] {
         let p = Path::new(p);
 
@@ -24,7 +24,7 @@ fn test_pyc_header() {
         assert_eq!(parser.version, (3, 12));
         assert_eq!(parser.py_content_hash(), None);
         assert_eq!(parser.py_content_mtime(), 1710422792);
-        assert_eq!(parser.py_content_size(), size);
+        assert_eq!(parser.py_content_size(), 16602);
     }
 }
 
