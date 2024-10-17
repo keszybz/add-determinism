@@ -14,8 +14,7 @@ use std::fmt::Write;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::{File, Metadata};
-use std::io::{self, BufReader};
-use std::io::Seek;
+use std::io::{self, Seek};
 use std::os::linux::fs::MetadataExt as _;
 use std::os::unix::fs as unix_fs;
 use std::os::unix::fs::MetadataExt as _;
@@ -418,13 +417,13 @@ impl<'a> InputOutputHelper<'a> {
         input_path: &'a Path,
         check: bool,
         verbose: bool,
-    ) -> Result<(Self, BufReader<File>)> {
+    ) -> Result<(Self, io::BufReader<File>)> {
 
         let input = File::open(input_path)
             .with_context(|| format!("Cannot open {:?}", input_path))?;
 
         let input_metadata = input.metadata()?;
-        let input = BufReader::new(input);
+        let input = io::BufReader::new(input);
 
         let io = InputOutputHelper {
             input_path,
@@ -442,37 +441,61 @@ impl<'a> InputOutputHelper<'a> {
         assert!(self.output_path.is_none());
         assert!(self.output.is_none());
 
-        // TODO: if .check, open a null sink here?
-        // We'd avoid some IO and also not require the output path to be writable.
+        let output;
 
-        let input_file_name = unwrap_os_string(self.input_path.file_name().unwrap())?;
-        let output_path = self.input_path.with_file_name(format!(".#.{}.tmp", input_file_name));
+        if self.check {
+            // TODO: use std::io::Sink here
+            output = File::options()
+                .read(true)
+                .write(true)
+                .open("/dev/null")?;
+        } else {
+            let input_file_name = unwrap_os_string(self.input_path.file_name().unwrap())?;
+            let output_path = self.input_path.with_file_name(format!(".#.{}.tmp", input_file_name));
 
-        let mut openopts = File::options();
-        openopts.read(true).write(true).create_new(true);
+            let mut openopts = File::options();
+            openopts
+                .read(true)
+                .write(true)
+                .create_new(true);
 
-        let output = match openopts.open(&output_path) {
-            Ok(some) => some,
-            Err(e) => {
-                if e.kind() != io::ErrorKind::AlreadyExists {
-                    bail!("{}: cannot open temporary file: {}", output_path.display(), e);
+            output = match openopts.open(&output_path) {
+                Ok(some) => some,
+                Err(e) => {
+                    if e.kind() != io::ErrorKind::AlreadyExists {
+                        bail!("{}: cannot open temporary file: {}", output_path.display(), e);
+                    }
+
+                    info!("{}: stale temporary file found, removing", output_path.display());
+                    fs::remove_file(&output_path)?;
+                    openopts.open(&output_path)?
                 }
+            };
+            self.output_path = Some(output_path);
+        }
 
-                info!("{}: stale temporary file found, removing", output_path.display());
-                fs::remove_file(&output_path)?;
-                openopts.open(&output_path)?
-            }
-        };
-        self.output_path = Some(output_path);
         self.output = Some(output);
-
         Ok(())
     }
 
     pub fn finalize(&mut self, have_mod: bool) -> Result<ProcessResult> {
         let meta = &self.input_metadata;
 
-        if have_mod {
+        if !have_mod {
+            Ok(ProcessResult::Noop)
+
+        } else if self.output_path.is_none() {
+            assert!(self.check);
+            // nothing to do, we're using a fake output
+            Ok(
+                if meta.nlink() == 1 {
+                    ProcessResult::Replaced
+                } else {
+                    ProcessResult::Rewritten
+                }
+            )
+
+        } else {
             let output_path = self.output_path.as_ref().unwrap();
 
             let mut output = self.output.as_mut();
@@ -534,8 +557,6 @@ impl<'a> InputOutputHelper<'a> {
 
                 Ok(ProcessResult::Rewritten)
             }
-        } else {
-            Ok(ProcessResult::Noop)
         }
     }
 }
