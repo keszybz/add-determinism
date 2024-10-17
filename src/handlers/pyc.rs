@@ -8,6 +8,7 @@ use std::fmt;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
@@ -776,8 +777,12 @@ enum Object {
 impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            // For References, we want to actually look at the
+            // reference target, so dereference before comparing.
+            (Object::Ref(v), w) => v.target.deref().eq(w),
+            (v, Object::Ref(w)) => v.eq(w.target.deref()),
+
             (Object::Code(v), Object::Code(w)) => v == w,
-            (Object::Ref(v), Object::Ref(w)) => v == w,
             (Object::Long(v, _), Object::Long(w, _)) => v == w,
             (Object::Int(v, _), Object::Int(w, _)) => v == w,
             (Object::Null(_), Object::Null(_)) => true,
@@ -1767,6 +1772,7 @@ impl super::Processor for PycZeroMtime {
 
 #[cfg(test)]
 mod tests {
+    use std::hash::{DefaultHasher, Hasher};
     use super::*;
 
     #[test]
@@ -1781,5 +1787,95 @@ mod tests {
         assert!(!h.filter(Path::new("/some/path/pyc")).unwrap());
         assert!(!h.filter(Path::new("/some/path/pyc_pyc")).unwrap());
         assert!(!h.filter(Path::new("/")).unwrap());
+    }
+
+    #[test]
+    fn seq_string_equality() {
+        let seq1 = Object::Seq(
+            SeqObject {
+                variant: SeqVariant::FrozenSet,
+                items: [
+                    Object::String(
+                        StringObject {
+                            variant: StringVariant::ShortAsciiInterned,
+                            bytes: [104, 116, 116, 112].to_vec(),
+                            ref_index: Some(43),
+                        }
+                    ).into(),
+                    Object::String(
+                        StringObject {
+                            variant: StringVariant::ShortAsciiInterned,
+                            bytes: [104, 116, 116, 112, 115].to_vec(),
+                            ref_index: Some(44),
+                        }
+                    ).into(),
+                ].to_vec(),
+                ref_index: None,
+            }
+        );
+        let seq2 = Object::Seq(
+            SeqObject {
+                variant: SeqVariant::FrozenSet,
+                items: [
+                    Object::String(
+                        StringObject {
+                            variant: StringVariant::ShortAsciiInterned,
+                            bytes: [104, 116, 116, 112].to_vec(),
+                            ref_index: None,
+                        }
+                    ).into(),
+                    Object::String(
+                        StringObject {
+                            variant: StringVariant::ShortAsciiInterned,
+                            bytes: [104, 116, 116, 112, 115].to_vec(),
+                            ref_index: None,
+                        }
+                    ).into(),
+                ].to_vec(),
+                ref_index: Some(43),
+            }
+        );
+
+        assert!(seq1 == seq1);
+        assert!(seq2 == seq2);
+        assert!(seq1 == seq2);
+        assert!(seq2 == seq1);
+
+        let mut hash1 = DefaultHasher::new();
+        seq1.hash(&mut hash1);
+
+        let mut hash2 = DefaultHasher::new();
+        seq2.hash(&mut hash2);
+
+        assert!(hash1.finish() == hash2.finish());
+    }
+
+    #[test]
+    fn seq_ref_equality() {
+        let obj1 = Object::Ref(
+            RefObject {
+                number: 43,
+                target: Object::String(
+                    StringObject {
+                        variant: StringVariant::ShortAsciiInterned,
+                        bytes: [104, 116, 116, 112].to_vec(),
+                        ref_index: Some(43),
+                    },
+                ).into(),
+                ref_index: Some(99),
+            }
+        );
+        let obj2 = Object::String(
+            StringObject {
+                variant: StringVariant::ShortAsciiInterned,
+                bytes: [104, 116, 116, 112].to_vec(),
+                ref_index: None,
+            },
+        );
+
+        assert!(obj1 == obj1);
+        assert!(obj2 == obj2);
+        assert!(obj1 == obj2);
+        assert!(obj2 == obj1);
     }
 }
