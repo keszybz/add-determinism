@@ -29,7 +29,7 @@ const FLAG_REF_BIT: u8 = 0x1 << 7;
 const TRACE: bool = false;
 
 pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
-    // https://github.com/python/cpython/blob/main/Lib/importlib/_bootstrap_external.py#L247
+    // https://github.com/python/cpython/blob/main/Include/internal/pycore_magic_number.h#L32
     //
     //     Python 1.5:   20121
     //     Python 1.5.1: 20121
@@ -260,8 +260,10 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     //     Python 3.13a6 3570 (Add __firstlineno__ class attribute)
     //     Python 3.14a1 3600 (Add LOAD_COMMON_CONSTANT)
     //     Python 3.14a1 3601 (Fix miscompilation of private names in generic classes)
-
-    //     Python 3.15 will start with 3700
+    //     Python 3.14a1 3602 (Add LOAD_SPECIAL. Remove BEFORE_WITH and BEFORE_ASYNC_WITH)
+    //     Python 3.14a1 3603 (Remove BUILD_CONST_KEY_MAP)
+    //
+    //     Python 3.15 will start with 3650
 
     if &buf[2..] != PYC_MAGIC {
         return Err(super::Error::BadMagic(2, buf[2..].to_vec(), PYC_MAGIC).into());
@@ -297,8 +299,8 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
         3450..=3495 => Ok(((3, 11), 16)),
         3500..=3531 => Ok(((3, 12), 16)),
         3550..=3599 => Ok(((3, 13), 16)),
-        3600..=3699 => Ok(((3, 14), 16)),
-        3700..=4000 => Ok(((3, 15), 16)),
+        3600..=3649 => Ok(((3, 14), 16)),
+        3650..=4000 => Ok(((3, 15), 16)),
         _ => Err(super::Error::Other(
             format!("not a pyc file, unknown version magic {}", val)
         ).into()),
@@ -714,6 +716,53 @@ impl DictObject {
 }
 
 #[derive(Debug, Eq)]
+struct SliceObject {
+    start: Rc<Object>,
+    stop: Rc<Object>,
+    step: Rc<Object>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl PartialEq for SliceObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.start == other.start &&
+            self.stop == other.stop &&
+            self.step == other.step
+    }
+}
+
+impl Hash for SliceObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.start.hash(state);
+        self.stop.hash(state);
+        self.step.hash(state);
+    }
+}
+
+impl SliceObject {
+    pub fn pretty_print<W>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        suffix: &str,
+        _multiline: bool,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        self.start.pretty_print(w, &format!("{} slice(", prefix), "", false, true)?;
+        self.stop.pretty_print(w, ", ", "", false, true)?;
+        self.step.pretty_print(w, ", ", "", false, true)?;
+        write!(
+            w, "){}{suffix}",
+            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+        )
+    }
+}
+
+#[derive(Debug, Eq)]
 struct RefObject {
     number: u64,
 
@@ -771,6 +820,7 @@ enum Object {
     Float(u64, Option<usize>),        // yes, u64, so Rust allows Eq to be implemented
     Complex(u64, u64, Option<usize>),
     Dict(DictObject),
+    Slice(SliceObject),
     Ref(RefObject),
 }
 
@@ -796,6 +846,7 @@ impl PartialEq for Object {
             (Object::String(v), Object::String(w)) => v == w,
             (Object::Seq(v), Object::Seq(w)) => v == w,
             (Object::Dict(v), Object::Dict(w)) => v == w,
+            (Object::Slice(v), Object::Slice(w)) => v == w,
             _ => false,
         }
     }
@@ -809,6 +860,7 @@ impl Hash for Object {
             Object::Seq(v) => v.hash(state),
             Object::Ref(v) => v.hash(state),
             Object::Dict(v) => v.hash(state),
+            Object::Slice(v) => v.hash(state),
 
             Object::Long(v, _) => v.hash(state),
             Object::Int(v, _) => v.hash(state),
@@ -850,6 +902,9 @@ impl Object {
             Object::Seq(v) => {
                 return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
+            Object::Slice(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+            }
             Object::Ref(v) => {
                 return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
@@ -878,6 +933,7 @@ impl Object {
         match self {
             Object::Code(..) => true,
             Object::Ref(..) => false,
+            Object::Slice(..) |
             Object::Long(..) |
             Object::Int(..) |
             Object::Null(..) |
@@ -948,6 +1004,12 @@ impl PycParser {
                }
         );
 
+        // TODO: check if .py file exists, and if yes, check if mtime
+        // read above matches the mtime on the file, and if the size
+        // read above matches the size of the source file. If not,
+        // warn that something is awry and Python would rewrite the
+        // bytecode. Consider adjusting the mtime and hash to match.
+
         Ok(pyc)
     }
 
@@ -1017,12 +1079,12 @@ impl PycParser {
         }
 
         let obj = match b {
-            b'0' => Rc::new(Object::Null(ref_index)),
-            b'N' => Rc::new(Object::None(ref_index)),
-            b'F' => Rc::new(Object::False(ref_index)),
-            b'T' => Rc::new(Object::True(ref_index)),
-            b'.' => Rc::new(Object::Ellipsis(ref_index)),
-            b'S' => Rc::new(Object::StopIteration(ref_index)),
+            b'0' => Object::Null(ref_index).into(),
+            b'N' => Object::None(ref_index).into(),
+            b'F' => Object::False(ref_index).into(),
+            b'T' => Object::True(ref_index).into(),
+            b'.' => Object::Ellipsis(ref_index).into(),
+            b'S' => Object::StopIteration(ref_index).into(),
 
             b'c'    // CODE
                 => self.read_codeobject(ref_index)?,
@@ -1052,10 +1114,8 @@ impl PycParser {
                 => self.read_string(StringVariant::Ascii, ref_index)?,
             b'A'    // ASCII_INTERNED
                 => self.read_string(StringVariant::AsciiInterned, ref_index)?,
-
             b')'    // SMALL_TUPLE
                 => self.read_small_tuple(ref_index)?,
-
             b'('    // TUPLE
                 => self.read_seq(SeqVariant::Tuple, ref_index)?,
             b'['    // LIST
@@ -1064,9 +1124,10 @@ impl PycParser {
                 => self.read_seq(SeqVariant::Set, ref_index)?,
             b'>'    // FROZEN_SET
                 => self.read_seq(SeqVariant::FrozenSet, ref_index)?,
-
             b'{'    // DICT
                 => self.read_dict(ref_index)?,
+            b':'    // SLICE
+                => self.read_slice(ref_index)?,
 
             b'I' |  // INT64
             b'f' |  // FLOAT
@@ -1074,13 +1135,17 @@ impl PycParser {
             b'?'    // UNKNOWN
                 => {
                     return Err(super::Error::Other(
-                        format!("unimplemented object type '{}'", b)
+                        format!("{}:{}/0x{:x}: unimplemented object type {}/'{}'",
+                                self.input_path.display(), offset, offset,
+                                b, b as char)
                     ).into());
                 },
             _
                 => {
                     return Err(super::Error::Other(
-                        format!("unknown object type '{}'", b)
+                        format!("{}:{}/0x{:x}: unknown object type {}/'{}'",
+                                self.input_path.display(), offset, offset,
+                                b, b as char)
                     ).into());
                 },
         };
@@ -1110,7 +1175,7 @@ impl PycParser {
     }
 
     fn read_codeobject(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Code(CodeObject {
+        Ok(Object::Code(CodeObject {
             argcount: self._read_long()?,
             posonlyargcount: self._maybe_read_long(self.version >= (3, 8))?,
             kwonlyargcount: self._read_long()?,
@@ -1132,7 +1197,7 @@ impl PycParser {
             linetable: self.read_object()?,
             exceptiontable: self.maybe_read_object(self.version >= (3, 11))?,
             ref_index,
-        })))
+        }).into())
     }
 
     fn _read_long_at(&self, offset: usize) -> u32 {
@@ -1152,7 +1217,7 @@ impl PycParser {
     }
 
     fn read_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Int(self._read_long()?, ref_index)))
+        Ok(Object::Int(self._read_long()?, ref_index).into())
     }
 
     fn _read_short(&mut self) -> Result<i32> {
@@ -1172,7 +1237,7 @@ impl PycParser {
             result += part.to_bigint().unwrap() << (i * PYLONG_MARSHAL_SHIFT) as usize;
         }
 
-        Ok(Rc::new(Object::Long(result * n.signum(), ref_index)))
+        Ok(Object::Long(result * n.signum(), ref_index).into())
     }
 
     fn read_string(&mut self, variant: StringVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1191,11 +1256,11 @@ impl PycParser {
         };
 
         let offset = self.take(size)?;
-        Ok(Rc::new(Object::String(StringObject {
+        Ok(Object::String(StringObject {
             variant,
             bytes: self.data[offset .. offset + size].to_vec(),
             ref_index,
-        })))
+        }).into())
     }
 
     fn _read_tuple(&mut self, variant: SeqVariant, size: u64, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1204,7 +1269,7 @@ impl PycParser {
             items.push(self.read_object()?);
         }
 
-        Ok(Rc::new(Object::Seq(SeqObject { variant, items, ref_index })))
+        Ok(Object::Seq(SeqObject { variant, items, ref_index }).into())
     }
 
     fn read_small_tuple(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1241,11 +1306,11 @@ impl PycParser {
             Some(v) => v
         };
 
-        Ok(Rc::new(Object::Ref(RefObject {
+        Ok(Object::Ref(RefObject {
             number: index as u64,
             target: target.clone(),
             ref_index,
-        })))
+        }).into())
     }
 
     fn _read_binary_float(&mut self) -> Result<f64> {
@@ -1255,18 +1320,18 @@ impl PycParser {
     }
 
     fn read_binary_float(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Float(
+        Ok(Object::Float(
             self._read_binary_float()?.to_bits(),
             ref_index,
-        )))
+        ).into())
     }
 
     fn read_binary_complex(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Complex(
+        Ok(Object::Complex(
             self._read_binary_float()?.to_bits(),
             self._read_binary_float()?.to_bits(),
             ref_index,
-        )))
+        ).into())
     }
 
     fn read_dict(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1282,7 +1347,15 @@ impl PycParser {
             items.push((key, value));
         }
 
-        Ok(Rc::new(Object::Dict(DictObject { items, ref_index } )))
+        Ok(Object::Dict(DictObject { items, ref_index } ).into())
+    }
+
+    fn read_slice(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        let start = self.read_object()?;
+        let stop = self.read_object()?;
+        let step = self.read_object()?;
+
+        Ok(Object::Slice(SliceObject { start, stop, step, ref_index } ).into())
     }
 
     fn set_zero_mtime(&mut self) -> Result<bool> {
@@ -1331,7 +1404,6 @@ impl PycWriter {
         w.add_ref_flags();
         w.fix_refs();
 
-        // TODO: overwrite content hash if present
         w.buffer
     }
 
@@ -1361,6 +1433,9 @@ impl PycWriter {
                 },
                 Object::Seq(v) => {
                     self.write_seq(v);
+                }
+                Object::Slice(v) => {
+                    self.write_slice(v);
                 }
                 Object::Dict(_) => todo!(),
                 // mind null termination!
@@ -1511,6 +1586,13 @@ impl PycWriter {
         }
     }
 
+    fn write_slice(&mut self, slice: &SliceObject) {
+        self.buffer.push(b':');
+        self.write_object(&slice.start);
+        self.write_object(&slice.stop);
+        self.write_object(&slice.step);
+    }
+
     fn _write_int(&mut self, int: u32) {
         let bytes = int.to_le_bytes();
         self.buffer.extend_from_slice(&bytes);
@@ -1593,7 +1675,7 @@ impl PycWriter {
                            entry, offset, offset, self.flag_index, count);
                 }
 
-                assert!("0NFT.ScgilyrzZstuaA)([<>{".contains(orig as char));
+                assert!("0NFT.ScgilyrzZstuaA)([<>{:".contains(orig as char));
                 self.buffer[*offset] |= FLAG_REF_BIT;
 
                 index.replace(Some(self.flag_index));
@@ -1777,7 +1859,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(config::Config::empty(0, false));
+        let cfg = config::Config::empty(0, false).into();
         let h = Pyc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/foobar.pyc")).unwrap());
