@@ -1025,12 +1025,12 @@ impl PycParser {
         }
 
         let obj = match b {
-            b'0' => Rc::new(Object::Null(ref_index)),
-            b'N' => Rc::new(Object::None(ref_index)),
-            b'F' => Rc::new(Object::False(ref_index)),
-            b'T' => Rc::new(Object::True(ref_index)),
-            b'.' => Rc::new(Object::Ellipsis(ref_index)),
-            b'S' => Rc::new(Object::StopIteration(ref_index)),
+            b'0' => Object::Null(ref_index).into(),
+            b'N' => Object::None(ref_index).into(),
+            b'F' => Object::False(ref_index).into(),
+            b'T' => Object::True(ref_index).into(),
+            b'.' => Object::Ellipsis(ref_index).into(),
+            b'S' => Object::StopIteration(ref_index).into(),
 
             b'c'    // CODE
                 => self.read_codeobject(ref_index)?,
@@ -1122,7 +1122,7 @@ impl PycParser {
     }
 
     fn read_codeobject(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Code(CodeObject {
+        Ok(Object::Code(CodeObject {
             argcount: self._read_long()?,
             posonlyargcount: self._maybe_read_long(self.version >= (3, 8))?,
             kwonlyargcount: self._read_long()?,
@@ -1144,7 +1144,7 @@ impl PycParser {
             linetable: self.read_object()?,
             exceptiontable: self.maybe_read_object(self.version >= (3, 11))?,
             ref_index,
-        })))
+        }).into())
     }
 
     fn _read_long_at(&self, offset: usize) -> u32 {
@@ -1164,7 +1164,7 @@ impl PycParser {
     }
 
     fn read_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Int(self._read_long()?, ref_index)))
+        Ok(Object::Int(self._read_long()?, ref_index).into())
     }
 
     fn _read_short(&mut self) -> Result<i32> {
@@ -1184,7 +1184,7 @@ impl PycParser {
             result += part.to_bigint().unwrap() << (i * PYLONG_MARSHAL_SHIFT) as usize;
         }
 
-        Ok(Rc::new(Object::Long(result * n.signum(), ref_index)))
+        Ok(Object::Long(result * n.signum(), ref_index).into())
     }
 
     fn read_string(&mut self, variant: StringVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1203,11 +1203,11 @@ impl PycParser {
         };
 
         let offset = self.take(size)?;
-        Ok(Rc::new(Object::String(StringObject {
+        Ok(Object::String(StringObject {
             variant,
             bytes: self.data[offset .. offset + size].to_vec(),
             ref_index,
-        })))
+        }).into())
     }
 
     fn _read_tuple(&mut self, variant: SeqVariant, size: u64, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1216,7 +1216,7 @@ impl PycParser {
             items.push(self.read_object()?);
         }
 
-        Ok(Rc::new(Object::Seq(SeqObject { variant, items, ref_index })))
+        Ok(Object::Seq(SeqObject { variant, items, ref_index }).into())
     }
 
     fn read_small_tuple(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1253,11 +1253,11 @@ impl PycParser {
             Some(v) => v
         };
 
-        Ok(Rc::new(Object::Ref(RefObject {
+        Ok(Object::Ref(RefObject {
             number: index as u64,
             target: target.clone(),
             ref_index,
-        })))
+        }).into())
     }
 
     fn _read_binary_float(&mut self) -> Result<f64> {
@@ -1267,18 +1267,18 @@ impl PycParser {
     }
 
     fn read_binary_float(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Float(
+        Ok(Object::Float(
             self._read_binary_float()?.to_bits(),
             ref_index,
-        )))
+        ).into())
     }
 
     fn read_binary_complex(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Rc::new(Object::Complex(
+        Ok(Object::Complex(
             self._read_binary_float()?.to_bits(),
             self._read_binary_float()?.to_bits(),
             ref_index,
-        )))
+        ).into())
     }
 
     fn read_dict(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
@@ -1294,7 +1294,7 @@ impl PycParser {
             items.push((key, value));
         }
 
-        Ok(Rc::new(Object::Dict(DictObject { items, ref_index } )))
+        Ok(Object::Dict(DictObject { items, ref_index } ).into())
     }
 
     fn set_zero_mtime(&mut self) -> Result<bool> {
@@ -1788,7 +1788,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(config::Config::empty(0, false));
+        let cfg = config::Config::empty(0, false).into();
         let h = Pyc::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/foobar.pyc")).unwrap());
