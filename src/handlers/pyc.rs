@@ -1082,13 +1082,17 @@ impl PycParser {
             b'?'    // UNKNOWN
                 => {
                     return Err(super::Error::Other(
-                        format!("unimplemented object type '{}'", b)
+                        format!("{}:{}/0x{:x}: unimplemented object type {}/'{}'",
+                                self.input_path.display(), offset, offset,
+                                b, b as char)
                     ).into());
                 },
             _
                 => {
                     return Err(super::Error::Other(
-                        format!("unknown object type '{}'", b)
+                        format!("{}:{}/0x{:x}: unknown object type {}/'{}'",
+                                self.input_path.display(), offset, offset,
+                                b, b as char)
                     ).into());
                 },
         };
