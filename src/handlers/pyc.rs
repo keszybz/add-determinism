@@ -950,6 +950,12 @@ impl PycParser {
                }
         );
 
+        // TODO: check if .py file exists, and if yes, check if mtime
+        // read above matches the mtime on the file, and if the size
+        // read above matches the size of the source file. If not,
+        // warn that something is awry and Python would rewrite the
+        // bytecode. Consider adjusting the mtime and hash to match.
+
         Ok(pyc)
     }
 
@@ -1333,7 +1339,6 @@ impl PycWriter {
         w.add_ref_flags();
         w.fix_refs();
 
-        // TODO: overwrite content hash if present
         w.buffer
     }
 
