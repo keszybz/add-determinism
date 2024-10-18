@@ -716,6 +716,53 @@ impl DictObject {
 }
 
 #[derive(Debug, Eq)]
+struct SliceObject {
+    start: Rc<Object>,
+    stop: Rc<Object>,
+    step: Rc<Object>,
+
+    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+}
+
+impl PartialEq for SliceObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.start == other.start &&
+            self.stop == other.stop &&
+            self.step == other.step
+    }
+}
+
+impl Hash for SliceObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.start.hash(state);
+        self.stop.hash(state);
+        self.step.hash(state);
+    }
+}
+
+impl SliceObject {
+    pub fn pretty_print<W>(
+        &self,
+        w: &mut W,
+        prefix: &str,
+        suffix: &str,
+        _multiline: bool,
+        show_ref: bool,
+    ) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        self.start.pretty_print(w, &format!("{} slice(", prefix), "", false, true)?;
+        self.stop.pretty_print(w, ", ", "", false, true)?;
+        self.step.pretty_print(w, ", ", "", false, true)?;
+        write!(
+            w, "){}{suffix}",
+            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+        )
+    }
+}
+
+#[derive(Debug, Eq)]
 struct RefObject {
     number: u64,
 
@@ -773,6 +820,7 @@ enum Object {
     Float(u64, Option<usize>),        // yes, u64, so Rust allows Eq to be implemented
     Complex(u64, u64, Option<usize>),
     Dict(DictObject),
+    Slice(SliceObject),
     Ref(RefObject),
 }
 
@@ -798,6 +846,7 @@ impl PartialEq for Object {
             (Object::String(v), Object::String(w)) => v == w,
             (Object::Seq(v), Object::Seq(w)) => v == w,
             (Object::Dict(v), Object::Dict(w)) => v == w,
+            (Object::Slice(v), Object::Slice(w)) => v == w,
             _ => false,
         }
     }
@@ -811,6 +860,7 @@ impl Hash for Object {
             Object::Seq(v) => v.hash(state),
             Object::Ref(v) => v.hash(state),
             Object::Dict(v) => v.hash(state),
+            Object::Slice(v) => v.hash(state),
 
             Object::Long(v, _) => v.hash(state),
             Object::Int(v, _) => v.hash(state),
@@ -852,6 +902,9 @@ impl Object {
             Object::Seq(v) => {
                 return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
+            Object::Slice(v) => {
+                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+            }
             Object::Ref(v) => {
                 return v.pretty_print(w, prefix, suffix, multiline, show_ref);
             }
@@ -880,6 +933,7 @@ impl Object {
         match self {
             Object::Code(..) => true,
             Object::Ref(..) => false,
+            Object::Slice(..) |
             Object::Long(..) |
             Object::Int(..) |
             Object::Null(..) |
@@ -1060,10 +1114,8 @@ impl PycParser {
                 => self.read_string(StringVariant::Ascii, ref_index)?,
             b'A'    // ASCII_INTERNED
                 => self.read_string(StringVariant::AsciiInterned, ref_index)?,
-
             b')'    // SMALL_TUPLE
                 => self.read_small_tuple(ref_index)?,
-
             b'('    // TUPLE
                 => self.read_seq(SeqVariant::Tuple, ref_index)?,
             b'['    // LIST
@@ -1072,9 +1124,10 @@ impl PycParser {
                 => self.read_seq(SeqVariant::Set, ref_index)?,
             b'>'    // FROZEN_SET
                 => self.read_seq(SeqVariant::FrozenSet, ref_index)?,
-
             b'{'    // DICT
                 => self.read_dict(ref_index)?,
+            b':'    // SLICE
+                => self.read_slice(ref_index)?,
 
             b'I' |  // INT64
             b'f' |  // FLOAT
@@ -1297,6 +1350,14 @@ impl PycParser {
         Ok(Object::Dict(DictObject { items, ref_index } ).into())
     }
 
+    fn read_slice(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+        let start = self.read_object()?;
+        let stop = self.read_object()?;
+        let step = self.read_object()?;
+
+        Ok(Object::Slice(SliceObject { start, stop, step, ref_index } ).into())
+    }
+
     fn set_zero_mtime(&mut self) -> Result<bool> {
         // Set the embedded mtime timestamp of the source .py file to 0 in the header.
 
@@ -1372,6 +1433,9 @@ impl PycWriter {
                 },
                 Object::Seq(v) => {
                     self.write_seq(v);
+                }
+                Object::Slice(v) => {
+                    self.write_slice(v);
                 }
                 Object::Dict(_) => todo!(),
                 // mind null termination!
@@ -1522,6 +1586,13 @@ impl PycWriter {
         }
     }
 
+    fn write_slice(&mut self, slice: &SliceObject) {
+        self.buffer.push(b':');
+        self.write_object(&slice.start);
+        self.write_object(&slice.stop);
+        self.write_object(&slice.step);
+    }
+
     fn _write_int(&mut self, int: u32) {
         let bytes = int.to_le_bytes();
         self.buffer.extend_from_slice(&bytes);
@@ -1604,7 +1675,7 @@ impl PycWriter {
                            entry, offset, offset, self.flag_index, count);
                 }
 
-                assert!("0NFT.ScgilyrzZstuaA)([<>{".contains(orig as char));
+                assert!("0NFT.ScgilyrzZstuaA)([<>{:".contains(orig as char));
                 self.buffer[*offset] |= FLAG_REF_BIT;
 
                 index.replace(Some(self.flag_index));
