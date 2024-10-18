@@ -29,7 +29,7 @@ const FLAG_REF_BIT: u8 = 0x1 << 7;
 const TRACE: bool = false;
 
 pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
-    // https://github.com/python/cpython/blob/main/Lib/importlib/_bootstrap_external.py#L247
+    // https://github.com/python/cpython/blob/main/Include/internal/pycore_magic_number.h#L32
     //
     //     Python 1.5:   20121
     //     Python 1.5.1: 20121
@@ -260,8 +260,10 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     //     Python 3.13a6 3570 (Add __firstlineno__ class attribute)
     //     Python 3.14a1 3600 (Add LOAD_COMMON_CONSTANT)
     //     Python 3.14a1 3601 (Fix miscompilation of private names in generic classes)
-
-    //     Python 3.15 will start with 3700
+    //     Python 3.14a1 3602 (Add LOAD_SPECIAL. Remove BEFORE_WITH and BEFORE_ASYNC_WITH)
+    //     Python 3.14a1 3603 (Remove BUILD_CONST_KEY_MAP)
+    //
+    //     Python 3.15 will start with 3650
 
     if &buf[2..] != PYC_MAGIC {
         return Err(super::Error::BadMagic(2, buf[2..].to_vec(), PYC_MAGIC).into());
@@ -297,8 +299,8 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
         3450..=3495 => Ok(((3, 11), 16)),
         3500..=3531 => Ok(((3, 12), 16)),
         3550..=3599 => Ok(((3, 13), 16)),
-        3600..=3699 => Ok(((3, 14), 16)),
-        3700..=4000 => Ok(((3, 15), 16)),
+        3600..=3649 => Ok(((3, 14), 16)),
+        3650..=4000 => Ok(((3, 15), 16)),
         _ => Err(super::Error::Other(
             format!("not a pyc file, unknown version magic {}", val)
         ).into()),
