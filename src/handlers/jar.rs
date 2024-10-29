@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::rc::Rc;
+use time;
 
 use crate::handlers::InputOutputHelper;
 use crate::config;
@@ -15,17 +16,36 @@ const CENTRAL_HEADER_FILE_MAGIC: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
 
 pub struct Jar {
     config: Rc<config::Config>,
+    unix_epoch: Option<time::OffsetDateTime>,
+    dos_epoch: Option<zip::DateTime>,
 }
 
 impl Jar {
     pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
-        Box::new(Self { config: config.clone() })
+        Box::new(Self {
+            config: config.clone(),
+            unix_epoch: None,
+            dos_epoch: None,
+        })
     }
 }
 
 impl super::Processor for Jar {
     fn name(&self) -> &str {
         "jar"
+    }
+
+    fn initialize(&mut self) -> Result<()> {
+        let unix_epoch = self.config.source_date_epoch
+            .map(|v| time::OffsetDateTime::from_unix_timestamp(v).unwrap());
+        let dos_epoch = match unix_epoch {
+            Some(epoch) => Some(zip::DateTime::try_from(epoch)?),
+            None => None,
+        };
+
+        self.unix_epoch = unix_epoch;
+        self.dos_epoch = dos_epoch;
+        Ok(())
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
@@ -42,9 +62,6 @@ impl super::Processor for Jar {
         let output = BufWriter::new(io.output.as_ref().unwrap());
         let mut output = zip::ZipWriter::new(output);
 
-        let epoch = self.config.source_date_epoch
-            .map(|v| time::OffsetDateTime::from_unix_timestamp(v).unwrap());
-
         for i in 0..input.len() {
             let file = input.by_index(i)?;
             output.raw_copy_file(file)?;
@@ -53,77 +70,70 @@ impl super::Processor for Jar {
         output.finish()?;
         drop(output);
 
-        if let Some(epoch) = epoch {
-            match zip::DateTime::try_from(epoch) {
-                Err(e) => {
-                    warn!("Cannot convert epoch {} to zip::DateTime: {}", epoch, e);
-                }
-                Ok(dos_epoch) => {
-                    let ts: [u8; 4] = [
-                        (dos_epoch.timepart() & 0xFF).try_into().unwrap(),
-                        (dos_epoch.timepart() >> 8).try_into().unwrap(),
-                        (dos_epoch.datepart() & 0xFF).try_into().unwrap(),
-                        (dos_epoch.datepart() >> 8).try_into().unwrap(),
-                    ];
+        if let Some(dos_epoch) = self.dos_epoch {
+            let ts: [u8; 4] = [
+                (dos_epoch.timepart() & 0xFF).try_into().unwrap(),
+                (dos_epoch.timepart() >> 8).try_into().unwrap(),
+                (dos_epoch.datepart() & 0xFF).try_into().unwrap(),
+                (dos_epoch.datepart() >> 8).try_into().unwrap(),
+            ];
 
-                    debug!("Epoch converted to zip::DateTime: {dos_epoch:?}");
-                    debug!("Epoch as buffer: {ts:?}");
+            debug!("Epoch converted to zip::DateTime: {dos_epoch:?}");
+            debug!("Epoch as buffer: {ts:?}");
 
-                    // Open output again to adjust timestamps
-                    let output_path = io.output_path.as_ref().unwrap();
-                    let mut output =
-                        zip::ZipArchive::new(BufReader::new(File::open(output_path)?))?;
+            // Open output again to adjust timestamps
+            let output_path = io.output_path.as_ref().unwrap();
+            let mut output =
+                zip::ZipArchive::new(BufReader::new(File::open(output_path)?))?;
 
-                    let overwrite = io.output.as_mut().unwrap();
+            let overwrite = io.output.as_mut().unwrap();
 
-                    for i in 0..output.len() {
-                        let file = output.by_index(i)?;
+            for i in 0..output.len() {
+                let file = output.by_index(i)?;
 
-                        match file.last_modified().to_time() {
-                            Err(e) => {
-                                warn!("{}: component {}: {}",
-                                      input_path.display(),
-                                      file.name(),
-                                      e);
-                            }
-                            Ok(mtime) => {
-                                debug!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, epoch,
-                                       mtime > epoch);
+                match file.last_modified().to_time() {
+                    Err(e) => {
+                        warn!("{}: component {}: {}",
+                              input_path.display(),
+                              file.name(),
+                              e);
+                    }
+                    Ok(mtime) => {
+                        debug!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, self.unix_epoch,
+                               mtime > self.unix_epoch.unwrap());
 
-                                if mtime > epoch {
-                                    let header_offset = file.header_start();
+                        if mtime > self.unix_epoch.unwrap() {
+                            let header_offset = file.header_start();
 
-                                    debug!("{}: {}: seeking to 0x{:08x} (local file header)",
-                                           io.output_path.as_ref().unwrap().display(),
-                                           file.name(),
-                                           header_offset);
+                            debug!("{}: {}: seeking to 0x{:08x} (local file header)",
+                                   io.output_path.as_ref().unwrap().display(),
+                                   file.name(),
+                                   header_offset);
 
-                                    overwrite.seek(SeekFrom::Start(header_offset))?;
-                                    let mut buf = [0; 10];
-                                    overwrite.read_exact(&mut buf)?;
-                                    assert_eq!(buf[..4], FILE_HEADER_MAGIC);
+                            overwrite.seek(SeekFrom::Start(header_offset))?;
+                            let mut buf = [0; 10];
+                            overwrite.read_exact(&mut buf)?;
+                            assert_eq!(buf[..4], FILE_HEADER_MAGIC);
 
-                                    // We write at offset header_start + 10
-                                    overwrite.write_all(&ts)?;
+                            // We write at offset header_start + 10
+                            overwrite.write_all(&ts)?;
 
-                                    let header_offset = file.central_header_start();
+                            let header_offset = file.central_header_start();
 
-                                    debug!("{}: {}: seeking to 0x{:08x} (central file header)",
-                                           io.output_path.as_ref().unwrap().display(),
-                                           file.name(),
-                                           header_offset);
+                            debug!("{}: {}: seeking to 0x{:08x} (central file header)",
+                                   io.output_path.as_ref().unwrap().display(),
+                                   file.name(),
+                                   header_offset);
 
-                                    overwrite.seek(SeekFrom::Start(header_offset))?;
-                                    let mut buf = [0; 12];
-                                    overwrite.read_exact(&mut buf)?;
-                                    assert_eq!(buf[..4], CENTRAL_HEADER_FILE_MAGIC);
+                            overwrite.seek(SeekFrom::Start(header_offset))?;
+                            let mut buf = [0; 12];
+                            overwrite.read_exact(&mut buf)?;
+                            assert_eq!(buf[..4], CENTRAL_HEADER_FILE_MAGIC);
 
-                                    // We write at offset header_start + 12
-                                    overwrite.write_all(&ts)?;
+                            // We write at offset header_start + 12
+                            overwrite.write_all(&ts)?;
 
-                                    have_mod = true;
-                                }
-                            }
+                            have_mod = true;
                         }
                     }
                 }
