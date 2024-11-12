@@ -1,17 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::{bail, Result};
-use log::{debug, warn, error};
+use log::{debug, info, warn, error};
 use nix::{errno, fcntl, sys, unistd};
 use serde::{Serialize, Deserialize};
-use std::env;
+use std::{cmp, env, process, str};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::net::UnixDatagram;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::process;
 use std::rc::Rc;
-use std::str;
 
 use crate::config;
 use crate::handlers;
@@ -64,8 +62,44 @@ impl Controller {
         Ok(cmd)
     }
 
+    fn set_socket_size(fd: &OwnedFd, n: usize) -> Result<usize> {
+        /* Let's assume our messages are not larger than 4096 bytes
+         * and that we cannot push more than 256 messages into the queue. */
+        let newsize = cmp::min(n, 256) * 4096;
+
+        let mut sndbuf = sys::socket::getsockopt(fd, sys::socket::sockopt::SndBuf)?;
+        debug!("Initial socket buffer size: {}", sndbuf);
+
+        if newsize > sndbuf {
+            sys::socket::setsockopt(fd, sys::socket::sockopt::SndBuf, &newsize)?;
+
+            sndbuf = sys::socket::getsockopt(fd, sys::socket::sockopt::SndBuf)?;
+            debug!("Tried to set socket buffer size to {}, got {}", newsize, sndbuf);
+
+            if newsize > sndbuf {
+                if let Err(err) = sys::socket::setsockopt(
+                    fd,
+                    sys::socket::sockopt::SndBufForce,
+                    &newsize,
+                ) {
+                    debug!("Cannot set buffer size to {}: {}", newsize, err);
+                } else {
+                    sndbuf = sys::socket::getsockopt(fd, sys::socket::sockopt::SndBuf)?;
+                    debug!("Tried to force socket buffer size to {}, got {}", newsize, sndbuf);
+                }
+            }
+        }
+
+        /* The kernel may set the size higher than we requested, but
+         * don't go above our initial goal. */
+        Ok(cmp::min(newsize, sndbuf) / 4096)
+    }
+
     pub fn create(config: &Rc<config::Config>) -> Result<Self> {
         let handlers = handlers::make_handlers(config)?;
+
+        let mut n = config.jobs.unwrap() as usize;
+        assert!(n > 0);
 
         let job_sockets = sys::socket::socketpair(
             sys::socket::AddressFamily::Unix,
@@ -84,15 +118,20 @@ impl Controller {
         fcntl::fcntl(result_sockets.1.as_raw_fd(), fcntl::F_SETFD(fcntl::FdFlag::FD_CLOEXEC))?;
         fcntl::fcntl(result_sockets.1.as_raw_fd(), fcntl::F_SETFL(fcntl::OFlag::O_NONBLOCK))?;
 
+        let n2 = Self::set_socket_size(&job_sockets.0, n)?;
+        if n2 < n {
+            info!("Limiting number of workers to {}", n2);
+            n = n2;
+        }
+
+        Self::set_socket_size(&result_sockets.0, n)?;
+
         let mut cmd = Self::build_worker_command(
             config,
             &handlers,
             &job_sockets.0.as_raw_fd(),
             &result_sockets.0.as_raw_fd(),
         )?;
-
-        let n = config.jobs.unwrap();
-        assert!(n > 0);
 
         let mut workers = vec![];
         for _ in 0..n {
@@ -119,7 +158,7 @@ impl Controller {
         let job = Job { selected_handlers, input_path: input_path.to_path_buf() };
         let buf = serde_cbor::ser::to_vec_packed(&job)?;
 
-        debug!("Sending {:?}", &job);
+        debug!("Sending {:?} ({} bytes)", &job, buf.len());
         unistd::write(&self.job_sockets.as_ref().unwrap().1, &buf)?;
 
         Ok(())
