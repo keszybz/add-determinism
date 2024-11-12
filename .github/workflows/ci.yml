@@ -53,6 +53,12 @@ jobs:
           mkdir /var/tmp/buildroot-2
           cp -a tests/cases /var/tmp/buildroot-2
           RPM_BUILD_ROOT=/var/tmp/buildroot-2 target/release/add-determinism -j4 --brp /var/tmp/buildroot-2
+      - name: Do empty runs with large number of processes
+        run: |
+          mkdir /var/tmp/buildroot-empty
+          for n in 200 300 400 500 2000 4000; do
+            RPM_BUILD_ROOT=/var/tmp/buildroot-empty target/release/add-determinism -j $n --brp /var/tmp/buildroot-empty
+          done
       - name: Simulate package processing with --check
         if: ${{ matrix.rust == 'stable' }}
         run: |
