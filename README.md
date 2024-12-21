@@ -66,7 +66,7 @@ Accepts `*.jar`.
 This rewrites the zip file using the `zip` crate.
 The modification times of archive entries is clamped `$SOURCE_DATE_EPOCH`.
 Extra metadata, i.e. primarily timestamps in UNIX format and DOS permissions,
-are stripped (also because the crate does not support them).
+is stripped (also because the crate does not support them).
 
 ### `javadoc`
 
@@ -100,6 +100,15 @@ and the filesystem metadata of the `.py` file.
 
 This handler is not enabled by default and must be explicitly requested
 via `--handler pyc-zero-mtime`.
+
+### `zip`
+
+Accepts `*.zip`.
+
+This rewrites the zip file using the `zip` crate.
+The modification times of archive entries is clamped `$SOURCE_DATE_EPOCH`.
+Extra metadata, i.e. primarily timestamps in UNIX format and DOS permissions,
+is stripped (also because the crate does not support them).
 
 ## Notes
 

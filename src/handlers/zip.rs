@@ -154,6 +154,22 @@ impl super::Processor for Zip {
             }
         }
 
+        if !have_mod &&
+            self.unix_epoch.is_some() &&
+            io.input_metadata.modified()? > self.unix_epoch.unwrap() {
+                // The file's modification timestamp indicates that it
+                // was created during the build. This means that it
+                // most likely contains uid and gid information that
+                // reflects the build environment. This will happen
+                // even for files which were copied from build sources
+                // and have mtime < $SOURCE_DATE_EPOCH. Our rewriting
+                // of the zip file would drop this metadata. Let's
+                // check if the rewritten file has different size,
+                // which indicates that we dropped some metadata.
+
+                have_mod = io.output.as_mut().unwrap().metadata()?.len() != io.input_metadata.len();
+            }
+
         io.finalize(have_mod)
     }
 }
