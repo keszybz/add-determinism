@@ -14,25 +14,38 @@ use crate::config;
 const FILE_HEADER_MAGIC: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const CENTRAL_HEADER_FILE_MAGIC: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
 
-pub struct Jar {
+pub struct Zip {
+    // Share the implementation for .zip and .jar, but define two
+    // separate handlers which can be enabled independently.
+    extension: &'static str,
+
     config: Rc<config::Config>,
     unix_epoch: Option<time::OffsetDateTime>,
     dos_epoch: Option<zip::DateTime>,
 }
 
-impl Jar {
-    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+impl Zip {
+    fn boxed(config: &Rc<config::Config>, extension: &'static str) -> Box<dyn super::Processor> {
         Box::new(Self {
+            extension,
             config: config.clone(),
             unix_epoch: None,
             dos_epoch: None,
         })
     }
+
+    pub fn boxed_zip(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+        Self::boxed(config, "zip")
+    }
+
+    pub fn boxed_jar(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+        Self::boxed(config, "jar")
+    }
 }
 
-impl super::Processor for Jar {
+impl super::Processor for Zip {
     fn name(&self) -> &str {
-        "jar"
+        self.extension
     }
 
     fn initialize(&mut self) -> Result<()> {
@@ -49,7 +62,8 @@ impl super::Processor for Jar {
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(self.config.ignore_extension || path.extension().is_some_and(|x| x == "jar"))
+        Ok(self.config.ignore_extension ||
+           path.extension().is_some_and(|x| x == self.extension))
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {

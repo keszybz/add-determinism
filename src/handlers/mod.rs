@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 pub mod ar;
-pub mod jar;
+pub mod zip;
 pub mod javadoc;
 pub mod pyc;
 
@@ -178,9 +178,10 @@ pub type HandlerBoxed = fn(&Rc<config::Config>) -> Box<dyn Processor>;
 
 pub const HANDLERS: &[(&str, bool, HandlerBoxed)] = &[
     ("ar",             true,  ar::Ar::boxed           ),
-    ("jar",            true,  jar::Jar::boxed         ),
+    ("jar",            true,  zip::Zip::boxed_jar     ),
     ("javadoc",        true,  javadoc::Javadoc::boxed ),
     ("pyc",            true,  pyc::Pyc::boxed         ),
+    ("zip",            true,  zip::Zip::boxed_zip     ),
     ("pyc-zero-mtime", false, pyc::PycZeroMtime::boxed),
 ];
 
