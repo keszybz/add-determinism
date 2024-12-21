@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::{debug, warn};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -49,15 +49,14 @@ impl super::Processor for Zip {
     }
 
     fn initialize(&mut self) -> Result<()> {
-        let unix_epoch = self.config.source_date_epoch
-            .map(|v| time::OffsetDateTime::from_unix_timestamp(v).unwrap());
-        let dos_epoch = match unix_epoch {
-            Some(epoch) => Some(zip::DateTime::try_from(epoch)?),
-            None => None,
+        let unix_epoch = match self.config.source_date_epoch {
+            None => bail!("{} handler requires $SOURCE_DATE_EPOCH to be set", self.extension),
+            Some(v) => time::OffsetDateTime::from_unix_timestamp(v).unwrap(),
         };
+        let dos_epoch = zip::DateTime::try_from(unix_epoch)?;
 
-        self.unix_epoch = unix_epoch;
-        self.dos_epoch = dos_epoch;
+        self.unix_epoch = Some(unix_epoch);
+        self.dos_epoch = Some(dos_epoch);
         Ok(())
     }
 

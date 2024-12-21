@@ -25,6 +25,8 @@ where
 {
     process::Command::new(add_det_bin())
         .args(args)
+        .env_remove("SOURCE_DATE_EPOCH")  // make sure that $SOURCE_DATE_EPOCH is
+                                          // not inherited from the environment
         .output()
         .expect("failed to execute add-determinism")
 }
@@ -115,10 +117,14 @@ fn test_invocation_check2() {
     let c = invoke(["--check", dir.path().to_str().unwrap(), "--handler", "ar"]);
     assert!(!c.status.success());
 
-    let c = invoke(["--check", "--handler=jar,javadoc,pyc", dir.path().to_str().unwrap()]);
+    let c = invoke(["--check", "--handler=javadoc,pyc", dir.path().to_str().unwrap()]);
     assert!(c.status.success());
 
-    let c = invoke(["--check", "--handler=-ar", dir.path().to_str().unwrap()]);
+    // $SOURCE_DATE_EPOCH is not set
+    let c = invoke(["--check", "--handler=zip,javadoc,pyc", dir.path().to_str().unwrap()]);
+    assert!(!c.status.success());
+
+    let c = invoke(["--check", "--handler=-ar,-jar,-zip", dir.path().to_str().unwrap()]);
     assert!(c.status.success());
 
     let c = invoke([dir.path()]);
