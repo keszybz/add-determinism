@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::{debug, warn};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -14,42 +14,55 @@ use crate::config;
 const FILE_HEADER_MAGIC: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const CENTRAL_HEADER_FILE_MAGIC: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
 
-pub struct Jar {
+pub struct Zip {
+    // Share the implementation for .zip and .jar, but define two
+    // separate handlers which can be enabled independently.
+    extension: &'static str,
+
     config: Rc<config::Config>,
     unix_epoch: Option<time::OffsetDateTime>,
     dos_epoch: Option<zip::DateTime>,
 }
 
-impl Jar {
-    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+impl Zip {
+    fn boxed(config: &Rc<config::Config>, extension: &'static str) -> Box<dyn super::Processor> {
         Box::new(Self {
+            extension,
             config: config.clone(),
             unix_epoch: None,
             dos_epoch: None,
         })
     }
+
+    pub fn boxed_zip(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+        Self::boxed(config, "zip")
+    }
+
+    pub fn boxed_jar(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+        Self::boxed(config, "jar")
+    }
 }
 
-impl super::Processor for Jar {
+impl super::Processor for Zip {
     fn name(&self) -> &str {
-        "jar"
+        self.extension
     }
 
     fn initialize(&mut self) -> Result<()> {
-        let unix_epoch = self.config.source_date_epoch
-            .map(|v| time::OffsetDateTime::from_unix_timestamp(v).unwrap());
-        let dos_epoch = match unix_epoch {
-            Some(epoch) => Some(zip::DateTime::try_from(epoch)?),
-            None => None,
+        let unix_epoch = match self.config.source_date_epoch {
+            None => bail!("{} handler requires $SOURCE_DATE_EPOCH to be set", self.extension),
+            Some(v) => time::OffsetDateTime::from_unix_timestamp(v).unwrap(),
         };
+        let dos_epoch = zip::DateTime::try_from(unix_epoch)?;
 
-        self.unix_epoch = unix_epoch;
-        self.dos_epoch = dos_epoch;
+        self.unix_epoch = Some(unix_epoch);
+        self.dos_epoch = Some(dos_epoch);
         Ok(())
     }
 
     fn filter(&self, path: &Path) -> Result<bool> {
-        Ok(self.config.ignore_extension || path.extension().is_some_and(|x| x == "jar"))
+        Ok(self.config.ignore_extension ||
+           path.extension().is_some_and(|x| x == self.extension))
     }
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
@@ -139,6 +152,22 @@ impl super::Processor for Jar {
                 }
             }
         }
+
+        if !have_mod &&
+            self.unix_epoch.is_some() &&
+            io.input_metadata.modified()? > self.unix_epoch.unwrap() {
+                // The file's modification timestamp indicates that it
+                // was created during the build. This means that it
+                // most likely contains uid and gid information that
+                // reflects the build environment. This will happen
+                // even for files which were copied from build sources
+                // and have mtime < $SOURCE_DATE_EPOCH. Our rewriting
+                // of the zip file would drop this metadata. Let's
+                // check if the rewritten file has different size,
+                // which indicates that we dropped some metadata.
+
+                have_mod = io.output.as_mut().unwrap().metadata()?.len() != io.input_metadata.len();
+            }
 
         io.finalize(have_mod)
     }
