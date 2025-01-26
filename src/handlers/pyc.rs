@@ -309,7 +309,7 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
 
 fn format_ref(show_ref: bool, ref_index: &Option<usize>) -> Option<String> {
     if show_ref && ref_index.is_some() {
-        Some(format!(" [#{}]", ref_index.unwrap()))
+        Some(format!(" 🚩{}", ref_index.unwrap()))
     } else {
         None
     }
@@ -439,16 +439,6 @@ impl CodeObject {
             v.pretty_print(w, "/", "", false, true)?;
         }
 
-        write!(w, " argcount={}", self.argcount)?;
-        if let Some(v) = self.posonlyargcount {
-            write!(w, " posonlyargcount={}", v)?;
-        }
-        write!(w, " kwonlyargcount={}", self.kwonlyargcount)?;
-        if let Some(v) = self.nlocals {
-            write!(w, " nlocals={}", v)?;
-        }
-        write!(w, " stacksize={}", self.stacksize)?;
-        write!(w, " flags={:x}", self.flags)?;
         if let Some(s) = format_ref(show_ref, &self.ref_index) {
             write!(w, "{}", s)?;
         }
@@ -458,6 +448,17 @@ impl CodeObject {
 
             self.filename.pretty_print(w, &format!("\n{indent}"), "", true, true)?;
             write!(w, ":{}", self.firstlineno)?;
+
+            write!(w, "\n{indent}argcount={}", self.argcount)?;
+            if let Some(v) = self.posonlyargcount {
+                write!(w, " posonlyargcount={}", v)?;
+            }
+            write!(w, " kwonlyargcount={}", self.kwonlyargcount)?;
+            if let Some(v) = self.nlocals {
+                write!(w, " nlocals={}", v)?;
+            }
+            write!(w, " stacksize={}", self.stacksize)?;
+            write!(w, " flags={:x}", self.flags)?;
 
             // We expect StringVariant::String with bytecode here.
             // Let's not print that out, since it's not going to be
@@ -1074,7 +1075,7 @@ impl PycParser {
             debug!("{}:{}/0x{:x}: type {:?}{}",
                    self.input_path.display(), offset, offset,
                    b as char,
-                   ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)),
+                   ref_index.map_or("".to_string(), |n| format!(" 🚩{}", n)),
             );
         }
 
