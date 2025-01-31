@@ -3,8 +3,11 @@
 use std::io::Read;
 use std::fs;
 use std::fs::File;
-use std::os::linux::fs::MetadataExt;
 use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::os::linux::fs::MetadataExt as _;
+#[cfg(target_os = "macos")]
+use std::os::macos::fs::MetadataExt as _;
 
 use add_determinism::handlers;
 use add_determinism::handlers::pyc;
