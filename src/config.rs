@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn test_requested_handlers() {
         let (list, strict) = requested_handlers(&vec![]).unwrap();
-        assert_eq!(list, vec!["ar", "jar", "javadoc", "pyc", "zip"]);
+        assert_eq!(list, vec!["ar", "jar", "javadoc", "gzip", "pyc", "zip"]);
         assert_eq!(strict, false);
 
         let (list, strict) = requested_handlers(&vec!["ar", "pyc-zero-mtime"]).unwrap();
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(strict, true);
 
         let (list, strict) = requested_handlers(&vec!["-pyc-zero-mtime"]).unwrap();
-        assert_eq!(list, vec!["ar", "jar", "javadoc", "pyc", "zip"]);
+        assert_eq!(list, vec!["ar", "jar", "javadoc", "gzip", "pyc", "zip"]);
         assert_eq!(strict, true);
     }
 }

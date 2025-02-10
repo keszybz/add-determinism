@@ -124,7 +124,7 @@ fn test_invocation_check2() {
     let c = invoke(["--check", "--handler=zip,javadoc,pyc", dir.path().to_str().unwrap()]);
     assert!(!c.status.success());
 
-    let c = invoke(["--check", "--handler=-ar,-jar,-zip", dir.path().to_str().unwrap()]);
+    let c = invoke(["--check", "--handler=-ar,-jar,-zip,-gzip", dir.path().to_str().unwrap()]);
     assert!(c.status.success());
 
     let c = invoke([dir.path()]);
