@@ -307,9 +307,9 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     }
 }
 
-fn format_ref(show_ref: bool, ref_index: &Option<usize>) -> Option<String> {
-    if show_ref && ref_index.is_some() {
-        Some(format!(" [#{}]", ref_index.unwrap()))
+fn format_flag(show_flag: bool, flag_num: &Option<usize>) -> Option<String> {
+    if show_flag && flag_num.is_some() {
+        Some(format!(" 🚩{}", flag_num.unwrap()))
     } else {
         None
     }
@@ -338,7 +338,7 @@ struct CodeObject {
     linetable: Rc<Object>,
     exceptiontable: Option<Rc<Object>>,
 
-    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+    flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl PartialEq for CodeObject {
@@ -397,21 +397,23 @@ impl CodeObject {
         indent: &str,
         name: &str,
         mut object: &Rc<Object>,
-        show_ref: bool,
+        show_flag: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
     {
-        let ref_info;
+        let (ref_info, show_target_flag);
         if let Object::Ref(v) = object.as_ref() {
             ref_info = format!(
                 "(ref to {}){}",
                 v.number,
-                format_ref(show_ref, &v.ref_index).unwrap_or("".to_string()),
+                format_flag(show_flag, &v.flag_num).unwrap_or("".to_string()),
             );
+            show_target_flag = false; // suppress printing of flag after we show ref info
             object = &v.target;
         } else {
-            ref_info = "".to_string()
+            ref_info = "".to_string();
+            show_target_flag = true;
         };
 
         if let Object::String(v) = object.as_ref() {
@@ -419,7 +421,7 @@ impl CodeObject {
                 return write!(w, "\n{indent}-{name}: {}[{} bytes]", ref_info, v.bytes.len())
             }
         }
-        object.pretty_print(w, &format!("\n{indent}-{name}: {}", ref_info), "", true, true)
+        object.pretty_print(w, &format!("\n{indent}-{name}: {}", ref_info), "", true, show_target_flag)
     }
 
     pub fn pretty_print<W>(
@@ -428,7 +430,7 @@ impl CodeObject {
         prefix: &str,
         suffix: &str,
         multiline: bool,
-        show_ref: bool,
+        show_flag: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
@@ -439,17 +441,7 @@ impl CodeObject {
             v.pretty_print(w, "/", "", false, true)?;
         }
 
-        write!(w, " argcount={}", self.argcount)?;
-        if let Some(v) = self.posonlyargcount {
-            write!(w, " posonlyargcount={}", v)?;
-        }
-        write!(w, " kwonlyargcount={}", self.kwonlyargcount)?;
-        if let Some(v) = self.nlocals {
-            write!(w, " nlocals={}", v)?;
-        }
-        write!(w, " stacksize={}", self.stacksize)?;
-        write!(w, " flags={:x}", self.flags)?;
-        if let Some(s) = format_ref(show_ref, &self.ref_index) {
+        if let Some(s) = format_flag(show_flag, &self.flag_num) {
             write!(w, "{}", s)?;
         }
 
@@ -459,10 +451,21 @@ impl CodeObject {
             self.filename.pretty_print(w, &format!("\n{indent}"), "", true, true)?;
             write!(w, ":{}", self.firstlineno)?;
 
+            write!(w, "\n{indent}argcount={}", self.argcount)?;
+            if let Some(v) = self.posonlyargcount {
+                write!(w, " posonlyargcount={}", v)?;
+            }
+            write!(w, " kwonlyargcount={}", self.kwonlyargcount)?;
+            if let Some(v) = self.nlocals {
+                write!(w, " nlocals={}", v)?;
+            }
+            write!(w, " stacksize={}", self.stacksize)?;
+            write!(w, " flags={:x}", self.flags)?;
+
             // We expect StringVariant::String with bytecode here.
             // Let's not print that out, since it's not going to be
             // readable in any way. Otherwise, just print the object.
-            Self::pretty_print_binary_string(w, &indent, "code", &self.code, show_ref)?;
+            Self::pretty_print_binary_string(w, &indent, "code", &self.code, true)?;
 
             self.consts.pretty_print(w, &format!("\n{indent}-consts: "), "", true, true)?;
             self.names.pretty_print(w, &format!("\n{indent}-names: "), "", true, true)?;
@@ -481,9 +484,9 @@ impl CodeObject {
             if let Some(v) = &self.localspluskinds {
                 v.pretty_print(w, &format!("\n{indent}-locals+kinds: "), "", true, true)?;
             }
-            Self::pretty_print_binary_string(w, &indent, "linetable", &self.linetable, show_ref)?;
+            Self::pretty_print_binary_string(w, &indent, "linetable", &self.linetable, true)?;
             if let Some(v) = &self.exceptiontable {
-                Self::pretty_print_binary_string(w, &indent, "exceptiontable", v, show_ref)?;
+                Self::pretty_print_binary_string(w, &indent, "exceptiontable", v, true)?;
             }
         }
 
@@ -507,7 +510,7 @@ struct StringObject {
     variant: StringVariant,
     bytes: Vec<u8>,
 
-    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+    flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl PartialEq for StringObject {
@@ -553,7 +556,7 @@ impl StringObject {
         prefix: &str,
         suffix: &str,
         _multiline: bool,
-        show_ref: bool,
+        show_flag: bool,
 ) -> fmt::Result
     where
         W: fmt::Write,
@@ -561,7 +564,7 @@ impl StringObject {
         write!(
             w, "{prefix}{}{}{suffix}",
             self,
-            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+            format_flag(show_flag, &self.flag_num).unwrap_or("".to_string()),
         )
     }
 }
@@ -579,7 +582,7 @@ struct SeqObject {
     variant: SeqVariant,
     items: Vec<Rc<Object>>,
 
-    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+    flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl PartialEq for SeqObject {
@@ -603,7 +606,7 @@ impl SeqObject {
         prefix: &str,
         suffix: &str,
         multiline: bool,
-        show_ref: bool,
+        show_flag: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
@@ -676,7 +679,7 @@ impl SeqObject {
         write!(
             w, "{:>width$}{end}{}{suffix}",
             "",
-            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+            format_flag(show_flag, &self.flag_num).unwrap_or("".to_string()),
             width=multiline as usize * indent,
         )
     }
@@ -693,7 +696,7 @@ struct DictObject {
     items: Vec<(Rc<Object>, Rc<Object>)>,
 
     #[allow(dead_code)]
-    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+    flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl PartialEq for DictObject {
@@ -721,7 +724,7 @@ struct SliceObject {
     stop: Rc<Object>,
     step: Rc<Object>,
 
-    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+    flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl PartialEq for SliceObject {
@@ -747,7 +750,7 @@ impl SliceObject {
         prefix: &str,
         suffix: &str,
         _multiline: bool,
-        show_ref: bool,
+        show_flag: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
@@ -757,7 +760,7 @@ impl SliceObject {
         self.step.pretty_print(w, ", ", "", false, true)?;
         write!(
             w, "){}{suffix}",
-            format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()),
+            format_flag(show_flag, &self.flag_num).unwrap_or("".to_string()),
         )
     }
 }
@@ -767,7 +770,7 @@ struct RefObject {
     number: u64,
 
     target: Rc<Object>,
-    ref_index: Option<usize>, // filled in when the object was stored with a flag_ref
+    flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
 }
 
 impl PartialEq for RefObject {
@@ -792,14 +795,14 @@ impl RefObject {
         prefix: &str,
         suffix: &str,
         multiline: bool,
-        show_ref: bool,
+        show_flag: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
     {
         let prefix = format!("{prefix}(ref to {}){}",
                              self.number,
-                             format_ref(show_ref, &self.ref_index).unwrap_or("".to_string()));
+                             format_flag(show_flag, &self.flag_num).unwrap_or("".to_string()));
         self.target.pretty_print(w, &prefix, suffix, multiline, false)
     }
 }
@@ -887,45 +890,45 @@ impl Object {
         prefix: &str,
         suffix: &str,
         multiline: bool,
-        show_ref: bool,
+        show_flag: bool,
     ) -> fmt::Result
     where
         W: fmt::Write,
     {
-        let (s, ref_index) = match self {
+        let (s, flag_num) = match self {
             Object::Code(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+                return v.pretty_print(w, prefix, suffix, multiline, show_flag);
             }
             Object::String(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+                return v.pretty_print(w, prefix, suffix, multiline, show_flag);
             }
             Object::Seq(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+                return v.pretty_print(w, prefix, suffix, multiline, show_flag);
             }
             Object::Slice(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+                return v.pretty_print(w, prefix, suffix, multiline, show_flag);
             }
             Object::Ref(v) => {
-                return v.pretty_print(w, prefix, suffix, multiline, show_ref);
+                return v.pretty_print(w, prefix, suffix, multiline, show_flag);
             }
             Object::Dict(_) => todo!(),
 
-            Object::Long(v, ref_index) => (format!("{v}"), ref_index),
-            Object::Int(v, ref_index) => (format!("{v}"), ref_index),
-            Object::Null(ref_index) => ("NULL".to_string(), ref_index),
-            Object::None(ref_index) => ("None".to_string(), ref_index),
-            Object::True(ref_index) => ("True".to_string(), ref_index),
-            Object::False(ref_index) => ("False".to_string(), ref_index),
-            Object::StopIteration(ref_index) => ("StopIteration".to_string(), ref_index),
-            Object::Ellipsis(ref_index) => ("...".to_string(), ref_index),
-            Object::Float(v, ref_index) => (format!("{v}"), ref_index),
-            Object::Complex(x, y, ref_index) => (format!("{x}+{y}j"), ref_index),
+            Object::Long(v, flag_num) => (format!("{v}"), flag_num),
+            Object::Int(v, flag_num) => (format!("{v}"), flag_num),
+            Object::Null(flag_num) => ("NULL".to_string(), flag_num),
+            Object::None(flag_num) => ("None".to_string(), flag_num),
+            Object::True(flag_num) => ("True".to_string(), flag_num),
+            Object::False(flag_num) => ("False".to_string(), flag_num),
+            Object::StopIteration(flag_num) => ("StopIteration".to_string(), flag_num),
+            Object::Ellipsis(flag_num) => ("...".to_string(), flag_num),
+            Object::Float(v, flag_num) => (format!("{v}"), flag_num),
+            Object::Complex(x, y, flag_num) => (format!("{x}+{y}j"), flag_num),
         };
 
         write!(
             w, "{prefix}{}{}{suffix}",
             s,
-            format_ref(show_ref, ref_index).unwrap_or("".to_string())
+            format_flag(show_flag, flag_num).unwrap_or("".to_string())
         )
     }
 
@@ -1053,7 +1056,7 @@ impl PycParser {
     }
 
     fn read_object(&mut self) -> Result<Rc<Object>> {
-        let ref_index: Option<usize>;
+        let flag_num: Option<usize>;
         let (offset, mut b) = self._read_byte()?;
 
         if (b & FLAG_REF_BIT) != 0 {
@@ -1064,70 +1067,70 @@ impl PycParser {
 
             // We reserve the reference index number early.
             // We'll put the constructed object into the slot later.
-            ref_index = Some(self.flag_refs.len());
+            flag_num = Some(self.flag_refs.len());
             self.flag_refs.push(None);
         } else {
-            ref_index = None;
+            flag_num = None;
         }
 
         if TRACE {
             debug!("{}:{}/0x{:x}: type {:?}{}",
                    self.input_path.display(), offset, offset,
                    b as char,
-                   ref_index.map_or("".to_string(), |n| format!(" [#{}]", n)),
+                   flag_num.map_or("".to_string(), |n| format!(" 🚩{}", n)),
             );
         }
 
         let obj = match b {
-            b'0' => Object::Null(ref_index).into(),
-            b'N' => Object::None(ref_index).into(),
-            b'F' => Object::False(ref_index).into(),
-            b'T' => Object::True(ref_index).into(),
-            b'.' => Object::Ellipsis(ref_index).into(),
-            b'S' => Object::StopIteration(ref_index).into(),
+            b'0' => Object::Null(flag_num).into(),
+            b'N' => Object::None(flag_num).into(),
+            b'F' => Object::False(flag_num).into(),
+            b'T' => Object::True(flag_num).into(),
+            b'.' => Object::Ellipsis(flag_num).into(),
+            b'S' => Object::StopIteration(flag_num).into(),
 
             b'c'    // CODE
-                => self.read_codeobject(ref_index)?,
+                => self.read_codeobject(flag_num)?,
             b'g'    // BINARY_FLOAT
-                => self.read_binary_float(ref_index)?,
+                => self.read_binary_float(flag_num)?,
             b'i'    // INT
-                => self.read_long(ref_index)?,
+                => self.read_long(flag_num)?,
             b'l'    // LONG
-                => self.read_py_long(ref_index)?,
+                => self.read_py_long(flag_num)?,
             b'y'    // BINARY_COMPLEX
-                => self.read_binary_complex(ref_index)?,
+                => self.read_binary_complex(flag_num)?,
 
             b'r'    // REF
-                => self.read_ref(ref_index)?,
+                => self.read_ref(flag_num)?,
 
             b'z'    // SHORT_ASCII
-                => self.read_string(StringVariant::ShortAscii, ref_index)?,
+                => self.read_string(StringVariant::ShortAscii, flag_num)?,
             b'Z'    // SHORT_ASCII_INTERNED
-                => self.read_string(StringVariant::ShortAsciiInterned, ref_index)?,
+                => self.read_string(StringVariant::ShortAsciiInterned, flag_num)?,
             b's'    // STRING
-                => self.read_string(StringVariant::String, ref_index)?,
+                => self.read_string(StringVariant::String, flag_num)?,
             b't'    // INTERNED
-                => self.read_string(StringVariant::Interned, ref_index)?,
+                => self.read_string(StringVariant::Interned, flag_num)?,
             b'u'    // UNICODE
-                => self.read_string(StringVariant::Unicode, ref_index)?,
+                => self.read_string(StringVariant::Unicode, flag_num)?,
             b'a'    // ASCII
-                => self.read_string(StringVariant::Ascii, ref_index)?,
+                => self.read_string(StringVariant::Ascii, flag_num)?,
             b'A'    // ASCII_INTERNED
-                => self.read_string(StringVariant::AsciiInterned, ref_index)?,
+                => self.read_string(StringVariant::AsciiInterned, flag_num)?,
             b')'    // SMALL_TUPLE
-                => self.read_small_tuple(ref_index)?,
+                => self.read_small_tuple(flag_num)?,
             b'('    // TUPLE
-                => self.read_seq(SeqVariant::Tuple, ref_index)?,
+                => self.read_seq(SeqVariant::Tuple, flag_num)?,
             b'['    // LIST
-                => self.read_seq(SeqVariant::List, ref_index)?,
+                => self.read_seq(SeqVariant::List, flag_num)?,
             b'<'    // SET
-                => self.read_seq(SeqVariant::Set, ref_index)?,
+                => self.read_seq(SeqVariant::Set, flag_num)?,
             b'>'    // FROZEN_SET
-                => self.read_seq(SeqVariant::FrozenSet, ref_index)?,
+                => self.read_seq(SeqVariant::FrozenSet, flag_num)?,
             b'{'    // DICT
-                => self.read_dict(ref_index)?,
+                => self.read_dict(flag_num)?,
             b':'    // SLICE
-                => self.read_slice(ref_index)?,
+                => self.read_slice(flag_num)?,
 
             b'I' |  // INT64
             b'f' |  // FLOAT
@@ -1154,9 +1157,9 @@ impl PycParser {
             dbg!(&obj);
         }
 
-        if let Some(ref_index) = ref_index {
-            assert!(self.flag_refs[ref_index].is_none());
-            self.flag_refs[ref_index] = Some(obj.clone());
+        if let Some(flag_num) = flag_num {
+            assert!(self.flag_refs[flag_num].is_none());
+            self.flag_refs[flag_num] = Some(obj.clone());
         }
 
         Ok(obj)
@@ -1174,7 +1177,7 @@ impl PycParser {
         })
     }
 
-    fn read_codeobject(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_codeobject(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         Ok(Object::Code(CodeObject {
             argcount: self._read_long()?,
             posonlyargcount: self._maybe_read_long(self.version >= (3, 8))?,
@@ -1196,7 +1199,7 @@ impl PycParser {
             firstlineno: self._read_long()?,
             linetable: self.read_object()?,
             exceptiontable: self.maybe_read_object(self.version >= (3, 11))?,
-            ref_index,
+            flag_num,
         }).into())
     }
 
@@ -1216,8 +1219,8 @@ impl PycParser {
         Ok(i32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
-    fn read_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
-        Ok(Object::Int(self._read_long()?, ref_index).into())
+    fn read_long(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
+        Ok(Object::Int(self._read_long()?, flag_num).into())
     }
 
     fn _read_short(&mut self) -> Result<i32> {
@@ -1228,7 +1231,7 @@ impl PycParser {
         Ok(x | -(x & 0x8000))
     }
 
-    fn read_py_long(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_py_long(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let n = self._read_long_signed()?;
 
         let mut result = 0_i32.to_bigint().unwrap();
@@ -1237,10 +1240,10 @@ impl PycParser {
             result += part.to_bigint().unwrap() << (i * PYLONG_MARSHAL_SHIFT) as usize;
         }
 
-        Ok(Object::Long(result * n.signum(), ref_index).into())
+        Ok(Object::Long(result * n.signum(), flag_num).into())
     }
 
-    fn read_string(&mut self, variant: StringVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_string(&mut self, variant: StringVariant, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let size = match variant {
             // short == size is stored as one byte
             StringVariant::ShortAscii |
@@ -1259,31 +1262,31 @@ impl PycParser {
         Ok(Object::String(StringObject {
             variant,
             bytes: self.data[offset .. offset + size].to_vec(),
-            ref_index,
+            flag_num,
         }).into())
     }
 
-    fn _read_tuple(&mut self, variant: SeqVariant, size: u64, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn _read_tuple(&mut self, variant: SeqVariant, size: u64, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let mut items = Vec::new();
         for _ in 0..size {
             items.push(self.read_object()?);
         }
 
-        Ok(Object::Seq(SeqObject { variant, items, ref_index }).into())
+        Ok(Object::Seq(SeqObject { variant, items, flag_num }).into())
     }
 
-    fn read_small_tuple(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_small_tuple(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         // small tuple — size is only one byte
         let size = self._read_byte()?.1;
-        self._read_tuple(SeqVariant::Tuple, size as u64, ref_index)
+        self._read_tuple(SeqVariant::Tuple, size as u64, flag_num)
     }
 
-    fn read_seq(&mut self, variant: SeqVariant, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_seq(&mut self, variant: SeqVariant, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let size = self._read_long()?;
-        self._read_tuple(variant, size as u64, ref_index)
+        self._read_tuple(variant, size as u64, flag_num)
     }
 
-    fn read_ref(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_ref(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let index = self._read_long()?;
 
         // Is this a valid reference to one of the already-flagged objects?
@@ -1309,7 +1312,7 @@ impl PycParser {
         Ok(Object::Ref(RefObject {
             number: index as u64,
             target: target.clone(),
-            ref_index,
+            flag_num,
         }).into())
     }
 
@@ -1319,22 +1322,22 @@ impl PycParser {
         Ok(f64::from_le_bytes(bytes.try_into().unwrap()))
     }
 
-    fn read_binary_float(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_binary_float(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         Ok(Object::Float(
             self._read_binary_float()?.to_bits(),
-            ref_index,
+            flag_num,
         ).into())
     }
 
-    fn read_binary_complex(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_binary_complex(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         Ok(Object::Complex(
             self._read_binary_float()?.to_bits(),
             self._read_binary_float()?.to_bits(),
-            ref_index,
+            flag_num,
         ).into())
     }
 
-    fn read_dict(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_dict(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let mut items = Vec::new();
 
         loop {
@@ -1347,15 +1350,15 @@ impl PycParser {
             items.push((key, value));
         }
 
-        Ok(Object::Dict(DictObject { items, ref_index } ).into())
+        Ok(Object::Dict(DictObject { items, flag_num } ).into())
     }
 
-    fn read_slice(&mut self, ref_index: Option<usize>) -> Result<Rc<Object>> {
+    fn read_slice(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let start = self.read_object()?;
         let stop = self.read_object()?;
         let step = self.read_object()?;
 
-        Ok(Object::Slice(SliceObject { start, stop, step, ref_index } ).into())
+        Ok(Object::Slice(SliceObject { start, stop, step, flag_num } ).into())
     }
 
     fn set_zero_mtime(&mut self) -> Result<bool> {
@@ -1377,8 +1380,8 @@ type SeenState = (usize, usize, RefCell<Option<usize>>);
 
 struct PycWriter {
     buffer: Vec<u8>,
-    seen: HashMap<Rc<Object>, SeenState>, // map object -> (offset, reference count, ref_index)
-    flag_index: usize,
+    seen: HashMap<Rc<Object>, SeenState>, // map object -> (offset, reference count, flag_num)
+    flag_num: usize,
     refs_to_fix: HashMap<usize, Rc<Object>>, // map offsets to ref -> object
     entry_count: usize,
 }
@@ -1388,7 +1391,7 @@ impl PycWriter {
         Self {
             buffer: Vec::from(header),
             seen: HashMap::new(),
-            flag_index: 0,
+            flag_num: 0,
             refs_to_fix: HashMap::new(),
             entry_count: 0,
         }
@@ -1672,15 +1675,15 @@ impl PycWriter {
                 let orig = self.buffer[*offset];
                 if TRACE {
                     debug!("Flagged {:?}, offset {}/{:x}, adding flag #{} ({} refs)",
-                           entry, offset, offset, self.flag_index, count);
+                           entry, offset, offset, self.flag_num, count);
                 }
 
                 assert!("0NFT.ScgilyrzZstuaA)([<>{:".contains(orig as char));
                 self.buffer[*offset] |= FLAG_REF_BIT;
 
-                index.replace(Some(self.flag_index));
+                index.replace(Some(self.flag_num));
 
-                self.flag_index += 1;
+                self.flag_num += 1;
             }
         }
     }
@@ -1694,7 +1697,7 @@ impl PycWriter {
             }
             assert!(*count > 0);
             let index = index.borrow().unwrap();
-            assert!(index < self.flag_index);
+            assert!(index < self.flag_num);
             assert!(offset > target_offset);
 
             assert!(self.buffer[*offset] == b'r');
@@ -1876,18 +1879,18 @@ mod tests {
                         StringObject {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112].to_vec(),
-                            ref_index: Some(43),
+                            flag_num: Some(43),
                         }
                     ).into(),
                     Object::String(
                         StringObject {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112, 115].to_vec(),
-                            ref_index: Some(44),
+                            flag_num: Some(44),
                         }
                     ).into(),
                 ].to_vec(),
-                ref_index: None,
+                flag_num: None,
             }
         );
         let seq2 = Object::Seq(
@@ -1898,18 +1901,18 @@ mod tests {
                         StringObject {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112].to_vec(),
-                            ref_index: None,
+                            flag_num: None,
                         }
                     ).into(),
                     Object::String(
                         StringObject {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112, 115].to_vec(),
-                            ref_index: None,
+                            flag_num: None,
                         }
                     ).into(),
                 ].to_vec(),
-                ref_index: Some(43),
+                flag_num: Some(43),
             }
         );
 
@@ -1936,17 +1939,17 @@ mod tests {
                     StringObject {
                         variant: StringVariant::ShortAsciiInterned,
                         bytes: [104, 116, 116, 112].to_vec(),
-                        ref_index: Some(43),
+                        flag_num: Some(43),
                     },
                 ).into(),
-                ref_index: Some(99),
+                flag_num: Some(99),
             }
         );
         let obj2 = Object::String(
             StringObject {
                 variant: StringVariant::ShortAsciiInterned,
                 bytes: [104, 116, 116, 112].to_vec(),
-                ref_index: None,
+                flag_num: None,
             },
         );
 
