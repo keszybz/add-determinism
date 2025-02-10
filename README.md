@@ -110,6 +110,43 @@ The modification times of archive entries is clamped `$SOURCE_DATE_EPOCH`.
 Extra metadata, i.e. primarily timestamps in UNIX format and DOS permissions,
 is stripped (also because the crate does not support them).
 
+## Printing of `.pyc` files
+
+When invoked with `-p`, this tool will print the contents of a `.pyc` file.
+Special effort is made to show flags on objects and references to them.
+
+Currently the actual code
+(arrays of bytes in the `Code` object's `code` field)
+are not printed.
+To do this nicely we would need to disassemble the code.
+Contributions welcome!
+
+```console
+$ add-determinism -p /path/to/pyc-file
+Code "<module>" 🚩204/(ref to 204)"<module>" 🚩0
+  (ref to 22)"/usr/lib/python3.12/site-packages/elftools/construct/adapters.py":1
+  argcount=0 posonlyargcount=0 kwonlyargcount=0 stacksize=5 flags=0
+  -code: [560 bytes]
+  -consts: (
+    1 🚩2,
+    ("Adapter" 🚩3, "AdaptationError" 🚩4, "Pass" 🚩5),
+    ("int_to_bin" 🚩6, "bin_to_int" 🚩7, "swap_bytes" 🚩8),
+    ("FlagsContainer" 🚩9, "HexString" 🚩10),
+    ("BytesIO" 🚩11, "decodebytes" 🚩12),
+    Code (ref to 14)"BitIntegerError"/(ref to 14)"BitIntegerError"
+      "/usr/lib/python3.12/site-packages/elftools/construct/adapters.py" 🚩22:10
+      argcount=0 posonlyargcount=0 kwonlyargcount=0 stacksize=1 flags=0
+      -code: [16 bytes]
+      -consts: ("BitIntegerError" 🚩14, None)
+      -names: ("__name__" 🚩16, "__module__" 🚩17, "__qualname__" 🚩18, "__slots__" 🚩19) 🚩15
+      -locals+names: () 🚩20
+      -locals+kinds: [] 🚩21
+      -linetable: [7 bytes]
+      -exceptiontable: (ref to 21)[],
+    (ref to 14)"BitIntegerError",
+...
+```
+
 ## Notes
 
 This project is inspired by
