@@ -46,7 +46,9 @@ jobs:
         run: |
           mkdir /var/tmp/buildroot-1
           cp -a tests/cases /var/tmp/buildroot-1
-          RPM_BUILD_ROOT=/var/tmp/buildroot-1 target/release/add-determinism --brp /var/tmp/buildroot-1/ --handler=-pyc,-jar,-zip
+          # Handlers which require $SOURCE_DATE_EPOCH have to be excluded,
+          # because we enter strict mode when --handler is used.
+          RPM_BUILD_ROOT=/var/tmp/buildroot-1 target/release/add-determinism --brp /var/tmp/buildroot-1/ --handler=-pyc,-jar,-zip,-gzip
       - name: Simulate package processing with -j
         if: ${{ matrix.rust == 'stable' }}
         run: |

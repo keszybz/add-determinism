@@ -3,6 +3,7 @@
 mod test_ar;
 mod test_jar;
 mod test_javadoc;
+mod test_gzip;
 mod test_pyc;
 mod test_pyc_zero_mtime;
 

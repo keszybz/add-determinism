@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 pub mod ar;
-pub mod zip;
+pub mod gzip;
 pub mod javadoc;
 pub mod pyc;
+pub mod zip;
 
 use anyhow::{bail, Context, Result};
 use log::{log, debug, info, warn, Level};
@@ -180,6 +181,7 @@ pub const HANDLERS: &[(&str, bool, HandlerBoxed)] = &[
     ("ar",             true,  ar::Ar::boxed           ),
     ("jar",            true,  zip::Zip::boxed_jar     ),
     ("javadoc",        true,  javadoc::Javadoc::boxed ),
+    ("gzip",           true,  gzip::Gzip::boxed       ),
     ("pyc",            true,  pyc::Pyc::boxed         ),
     ("zip",            true,  zip::Zip::boxed_zip     ),
     ("pyc-zero-mtime", false, pyc::PycZeroMtime::boxed),
@@ -518,7 +520,7 @@ impl<'a> InputOutputHelper<'a> {
             let output = output.unwrap();
 
             // If the original file has nlinks == 1, we atomically replace it.
-            // If it has multiple links, we reopen the orignal file and rewrite it.
+            // If it has multiple links, we reopen the original file and rewrite it.
             // This way the inode number is retained and hard links are not broken.
             if meta.nlink() == 1 {
                 log!(if self.verbose { Level::Info } else { Level::Debug },
