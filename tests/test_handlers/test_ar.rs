@@ -1,8 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use std::fs;
-use std::os::linux::fs::MetadataExt;
 use std::rc::Rc;
+#[cfg(target_os = "linux")]
+use std::os::linux::fs::MetadataExt as _;
+#[cfg(target_os = "macos")]
+use std::os::macos::fs::MetadataExt as _;
 
 use add_determinism::config;
 use add_determinism::handlers;
