@@ -256,7 +256,7 @@ fn process_file_with_selected_handlers(
 ) -> Result<handlers::ProcessResult> {
 
     // check if selected_handlers doesn't have any unexpected entries
-    if u8::BITS - selected_handlers.leading_zeros() > handlers.len().try_into().unwrap() {
+    if u8::BITS - selected_handlers.leading_zeros() > handlers.len() as u32 {
         bail!("Bad handler mask 0x{selected_handlers:x}");
     }
 
