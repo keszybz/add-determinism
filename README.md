@@ -17,7 +17,7 @@ and the copy is renamed over the original.
 If processing fails, a warning is emitted,
 but no modifications are made and the program returns success.
 
-The purpose of this tool is to elimiate common source of non-determinism in builds,
+The purpose of this tool is to eliminate common sources of non-determinism in builds,
 making it easier to create reproducible (package) builds.
 
 ## Usage
