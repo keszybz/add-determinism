@@ -120,13 +120,13 @@ pub struct Stats {
     /// processing.
     pub files: u64,
 
-    /// Counf of inodes we actually processed. We maintain a cache of
+    /// Count of inodes we actually processed. We maintain a cache of
     /// processed inode numbers, so a given inode is be processed only
     /// once.
     pub inodes_processed: u64,
 
     /// Count of inodes modified. Split into inodes that were
-    /// atomatically replaced and inodes that were rewritten. We
+    /// automatically replaced and inodes that were rewritten. We
     /// do a rewrite if there are hardlinks to maintain them.
     pub inodes_replaced: u64,
     pub inodes_rewritten: u64,
