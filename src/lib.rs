@@ -3,3 +3,4 @@
 pub mod config;
 pub mod handlers;
 pub mod simplelog;
+pub mod setup;
