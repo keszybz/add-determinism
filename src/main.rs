@@ -3,50 +3,13 @@
 mod config;
 mod handlers;
 mod multiprocess;
+mod setup;
 mod simplelog;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use log::debug;
 use std::env;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-fn brp_check(config: &config::Config, build_root: Option<String>) -> Result<()> {
-    // env::current_exe() does readlink("/proc/self/exe"), which returns
-    // the target binary, so we cannot use that.
-
-    let arg0 = env::args().next().unwrap();
-
-    debug!("Running as {arg0}… (brp={})", if config.brp { "true" } else { "false" });
-
-    if config.brp {
-        let build_root = build_root.map_or_else(
-            || env::var("RPM_BUILD_ROOT")
-                .map_err(|e| anyhow!("$RPM_BUILD_ROOT is not set correctly: {e}")),
-            Ok,
-        )?;
-
-        if build_root.is_empty() {
-            bail!("Empty $RPM_BUILD_ROOT is not allowed");
-        }
-
-        // Canonicalize the path, removing duplicate or trailing slashes
-        // and intermediate dot components, but not double dots.
-        let build_root = PathBuf::from_iter(Path::new(&build_root).iter());
-
-        if build_root == Path::new("/") {
-            bail!("RPM_BUILD_ROOT={build_root:?} is not allowed");
-        }
-
-        for arg in &config.inputs {
-            if !arg.starts_with(&build_root) {
-                bail!("Path {arg:?} does not start with RPM_BUILD_ROOT={build_root:?}");
-            }
-        }
-    }
-
-    Ok(())
-}
 
 fn main() -> Result<()> {
     let config = match config::Config::make()? {
@@ -59,7 +22,15 @@ fn main() -> Result<()> {
         return handlers::do_print(&config);
     }
 
-    brp_check(&config, None)?;
+    // env::current_exe() does readlink("/proc/self/exe"), which returns
+    // the target binary, so we cannot use that.
+    let arg0 = env::args().next().unwrap();
+
+    debug!("Running as {arg0}… (brp={})", if config.brp { "true" } else { "false" });
+
+    if config.brp {
+        setup::brp_check(None, &config.inputs)?;
+    }
 
     let stats;
 
@@ -84,26 +55,5 @@ fn main() -> Result<()> {
         bail!("--check was specified, but some files would have been modified")
     }  else {
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_brp_check() {
-        let mut config = config::Config::empty(111, false);
-        config.brp = true;
-        config.inputs.push("/var/tmp/foo/bar".into());
-        config.inputs.push("/var/tmp/foo/./bar".into());
-        // Sic, this is allowed.
-        config.inputs.push("/var/tmp/foo/./bar/../asdf".into());
-        config.inputs.push("/var/tmp/foo/./bar/../../../asdf".into());
-
-        assert!(brp_check(&config, Some("".to_string())).is_err());
-        assert!(brp_check(&config, Some("///.///".to_string())).is_err());
-        assert!(brp_check(&config, Some("/var/tmp/foo2".to_string())).is_err());
-        assert!(brp_check(&config, Some("/var/tmp/foo///./".to_string())).is_ok());
     }
 }
