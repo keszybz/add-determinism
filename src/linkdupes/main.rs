@@ -1,36 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use anyhow::{anyhow, bail, Result};
-use clap::Parser;
-use log::{debug, info, warn, LevelFilter};
+mod config;
+
+use anyhow::{bail, Error, Result};
+use log::{debug, info, warn};
 use std::cmp::{min, Ordering};
-use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hasher};
-use std::io::{Read, Seek};
+use std::io::Read;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::cell::RefCell;
-use std::time::SystemTime;
 use std::fs;
 
-use add_determinism::setup;
-use add_determinism::simplelog;
-
-#[derive(Debug, Parser)]
-#[command(version, about, long_about = None)]
-struct Options {
-    /// Paths to operate on
-    #[arg(value_name = "path")]
-    pub inputs: Vec<PathBuf>,
-
-    /// Adjust behaviour as appropriate for a build root program
-    #[arg(long)]
-    pub brp: bool,
-
-    /// Turn on debugging output
-    #[arg(short, long)]
-    pub verbose: bool,
-}
+use crate::config::Config;
 
 #[derive(Debug)]
 enum FileState {
@@ -58,52 +40,65 @@ impl FileInfo {
         }
     }
 
-    fn compare(&self, other: &FileInfo) -> Ordering {
+    fn compare(&self, other: &FileInfo, config: &Config) -> Ordering {
         // Return LT, EQ, or GT for the comparison of the two files.
         // We may fail to read one or both of the files.
         // In that case, say that they are *not equal*, and the one with
         // the higher inode number is greater.
 
         // If files have different size, the contents are different by definition.
-        let mut ret = self.metadata.len().cmp(&other.metadata.len());
-        // debug!("Comparing {} and {} → size={:?}", self.path.display(), other.path.display(), ret);
-        if ret != Ordering::Equal {
-            return ret;
+        let mut partial = self.metadata.len().cmp(&other.metadata.len());
+        // debug!("Comparing {} and {} → size={:?}", self.path.display(), other.path.display(), partial);
+        if partial != Ordering::Equal {
+            return partial;
         }
 
         // TODO: check fs, compare as different since we can never link
 
         // If files point at the same inode, the contents are equal by definition.
-        ret = self.metadata.ino().cmp(&other.metadata.ino());
-        // debug!("Comparing {} and {} → inode={:?}", self.path.display(), other.path.display(), ret);
-        if ret == Ordering::Equal {
-            return ret;
+        partial = self.metadata.ino().cmp(&other.metadata.ino());
+        // debug!("Comparing {} and {} → inode={:?}", self.path.display(), other.path.display(), partial);
+        if partial == Ordering::Equal {
+            return partial;
         }
+
+        // TODO: check ownership and mode
 
         for i in 0.. {
             let hash1 = match self.get_hash(i) {
-                Err(_) => { return ret; }
+                Err(e) => { return FileInfo::file_error(partial, e, config); }
                 Ok(hash) => hash,
             };
 
             let hash2 = match other.get_hash(i) {
-                Err(_) => { return ret; }
+                Err(e) => { return FileInfo::file_error(partial, e, config); }
                 Ok(hash) => hash,
             };
 
-            let partial = hash1.cmp(&hash2);
+            let res = hash1.cmp(&hash2);
             // debug!("Comparing {} and {} → hash{}={:?}",
             //        self.path.display(), other.path.display(), i, partial);
-            if partial != Ordering::Equal {
-                return partial;
+            if res != Ordering::Equal {
+                return res;
             }
 
             if hash1.is_none() && hash2.is_none() {
+                // Both files have been read
                 return Ordering::Equal;
             }
         }
 
         unreachable!();
+    }
+
+    fn file_error(partial: Ordering, _err: Error, config: &Config) -> Ordering {
+        // Either exit the program or return a partial result,
+        // depending on what Config says.
+        if config.fatal_errors {
+            std::process::exit(1);
+        } else {
+            partial
+        }
     }
 
     fn hash_chunk_size(previous_chunk_count: usize) -> u64 {
@@ -152,7 +147,7 @@ impl FileInfo {
             _ => {}
         };
 
-        let mut file = match *file_state {
+        let file = match *file_state {
             FileState::Open(ref f) => { f }
             _ => { panic!() }
         };
@@ -189,9 +184,10 @@ impl FileInfo {
     }
 }
 
-pub fn process_file_or_dir(
+fn process_file_or_dir(
     files_seen: &mut Vec<FileInfo>,
     input_path: &Path,
+    config: &Config,
 ) -> Result<()> {
 
     for entry in walkdir::WalkDir::new(input_path)
@@ -199,15 +195,30 @@ pub fn process_file_or_dir(
         .into_iter() {
             let entry = match entry {
                 Err(e) => {
-                    warn!("Failed to process: {e}");
-                    continue;
+                    if config.fatal_errors {
+                        return Err(e.into());
+                    } else {
+                        warn!("Failed to process {}: {}", input_path.display(), e);
+                        continue;
+                    }
                 }
                 Ok(entry) => entry
             };
 
             // debug!("Looking at {}…", entry.path().display());
 
-            let metadata = entry.metadata()?;
+            let metadata = match entry.metadata() {
+                Err(e) => {
+                    if config.fatal_errors {
+                        return Err(e.into());
+                    } else {
+                        warn!("{}: failed to stat: {}", entry.path().display(), e);
+                        continue;
+                    }
+                }
+                Ok(entry) => entry
+            };
+
             if metadata.is_dir() {
                 continue;
             }
@@ -223,19 +234,26 @@ pub fn process_file_or_dir(
     Ok(())
 }
 
-fn link_files(files: Vec<FileInfo>) -> Result<()> {
+fn link_files(files: Vec<FileInfo>, config: &Config) -> Result<()> {
     let mut linkto: Option<usize> = None;
+
+    // index is used as a workaround here. I expected .into_iter() to give me
+    // an object that I can put in linkto. But then the compiler says that the
+    // reference outlives the scope. No idea how to go from a reference to the
+    // actual object.
 
     for (n, finfo) in files.iter().enumerate() {
         info!("File[{}]: {} (linkto: {:?})", n, finfo.path.display(), linkto);
 
-        if linkto.is_some_and(
-            |linkto| { FileInfo::compare(&files[linkto], &finfo) == Ordering::Equal }) {
+        if linkto.is_some() &&
+           FileInfo::compare(&files[linkto.unwrap()], finfo, config) == Ordering::Equal {
 
             if files[linkto.unwrap()].metadata.ino() == finfo.metadata.ino() {
-                info!("Already linked: {} and {}", files[linkto.unwrap()].path.display(), finfo.path.display());
+                info!("Already linked: {} and {}",
+                      files[linkto.unwrap()].path.display(), finfo.path.display());
             } else {
-                info!("Would link {} ← {}", files[linkto.unwrap()].path.display(), finfo.path.display());
+                info!("Would link {} ← {}",
+                      files[linkto.unwrap()].path.display(), finfo.path.display());
             }
 
         } else if let FileState::Error = *finfo.file_state.borrow() {
@@ -250,24 +268,18 @@ fn link_files(files: Vec<FileInfo>) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let options = Options::parse();
-
-    let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
-    simplelog::init(log_level, false)?;
-
-    let source_date_epoch = setup::source_date_epoch()?;
+    let config = Config::make()?;
 
     rlimit::increase_nofile_limit(u64::MAX)?;
 
     let mut files_seen = vec![];
-
-    for input_path in &options.inputs {
-        process_file_or_dir(&mut files_seen, input_path);
+    for input_path in &config.inputs {
+        process_file_or_dir(&mut files_seen, input_path, &config)?;
     }
 
-    files_seen.sort_by(FileInfo::compare);
+    files_seen.sort_by(|a, b| FileInfo::compare(a, b, &config));
 
-    link_files(files_seen)?;
+    link_files(files_seen, &config)?;
 
     Ok(())
 }
