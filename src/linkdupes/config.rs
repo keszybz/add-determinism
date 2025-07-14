@@ -4,7 +4,9 @@ use clap::Parser;
 
 use anyhow::Result;
 use log::{info, LevelFilter};
+use std::ops::Add;
 use std::path::PathBuf;
+use std::time;
 
 use add_determinism::setup;
 use add_determinism::simplelog;
@@ -35,16 +37,21 @@ struct Options {
     /// Link even if access modes are different
     #[arg(long)]
     pub ignore_mode: bool,
+
+    /// Link even if owner or group are different
+    #[arg(long)]
+    pub ignore_owner: bool,
 }
 
 pub struct Config {
     pub inputs: Vec<PathBuf>,
     pub fatal_errors: bool,
-    pub verbose: bool,
+    pub _verbose: bool,
     pub dry_run: bool,
     pub ignore_mtime: bool,
     pub ignore_mode: bool,
-    pub source_date_epoch: Option<i64>,
+    pub ignore_owner: bool,
+    pub source_date_epoch: Option<time::SystemTime>,
 }
 
 impl Config {
@@ -56,7 +63,9 @@ impl Config {
         simplelog::init(log_level, false)?;
 
         // $SOURCE_DATE_EPOCH
-        let source_date_epoch = setup::source_date_epoch()?;
+        let source_date_epoch = setup::source_date_epoch()?.map(
+            |s| time::UNIX_EPOCH.add(time::Duration::new(s as u64, 0))
+        );
 
         // Extra checks in case --brp was specified
         if options.brp {
@@ -71,10 +80,11 @@ impl Config {
         Ok(Self {
             inputs: options.inputs,
             fatal_errors: options.brp,
-            verbose: options.verbose,
+            _verbose: options.verbose,
             dry_run: options.dry_run,
             ignore_mtime: options.ignore_mtime,
             ignore_mode: options.ignore_mode,
+            ignore_owner: options.ignore_owner,
             source_date_epoch,
         })
     }

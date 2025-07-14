@@ -46,39 +46,84 @@ impl FileInfo {
         // In that case, say that they are *not equal*, and the one with
         // the higher inode number is greater.
 
+        let ms = &self.metadata;
+        let mo = &other.metadata;
+
         // If files have different size, the contents are different by definition.
-        let mut partial = self.metadata.len().cmp(&other.metadata.len());
+        let mut partial = ms.len().cmp(&mo.len());
         // debug!("Comparing {} and {} → size={:?}", self.path.display(), other.path.display(), partial);
         if partial != Ordering::Equal {
             return partial;
         }
 
-        // TODO: check fs, compare as different since we can never link
-
-        // If files point at the same inode, the contents are equal by definition.
-        partial = self.metadata.ino().cmp(&other.metadata.ino());
-        // debug!("Comparing {} and {} → inode={:?}", self.path.display(), other.path.display(), partial);
-        if partial == Ordering::Equal {
+        partial = ms.dev().cmp(&mo.dev());
+        if partial != Ordering::Equal {
             return partial;
         }
 
-        // TODO: check ownership and mode
+        // If files point at the same inode, the contents are equal by definition.
+        let ino_res = ms.ino().cmp(&mo.ino());
+        // debug!("Comparing {} and {} → inode={:?}", self.path.display(), other.path.display(), partial);
+        if ino_res == Ordering::Equal {
+            return ino_res;
+        }
+
+        if !config.ignore_mode {
+            partial = ms.permissions().mode().cmp(&mo.permissions().mode());
+            if partial != Ordering::Equal {
+                debug!("Comparing {} and {} → mode={:?}", self.path.display(), other.path.display(), partial);
+                return partial;
+            }
+        }
+
+        if !config.ignore_owner {
+            partial = ms.uid().cmp(&mo.uid());
+            if partial != Ordering::Equal {
+                debug!("Comparing {} and {} → uid={:?}", self.path.display(), other.path.display(), partial);
+                return partial;
+            }
+
+            partial = ms.gid().cmp(&mo.gid());
+            if partial != Ordering::Equal {
+                debug!("Comparing {} and {} → gid={:?}", self.path.display(), other.path.display(), partial);
+                return partial;
+            }
+        }
+
+        if !config.ignore_mtime {
+            // mtime is clamped to $SOURCE_DATE_EPOCH, if set.
+            let mut t1 = ms.modified().expect("query mtime");
+            if let Some(s) = config.source_date_epoch.filter(|s| s < &t1) {
+                t1 = s;
+            }
+
+            let mut t2 = mo.modified().expect("query mtime");
+            if let Some(s) = config.source_date_epoch.filter(|s| s < &t2) {
+                t2 = s;
+            }
+
+            partial = t1.cmp(&t2);
+            if partial != Ordering::Equal {
+                debug!("Comparing {} and {} → mtime={:?}", self.path.display(), other.path.display(), partial);
+                return partial;
+            }
+        }
 
         for i in 0.. {
             let hash1 = match self.get_hash(i) {
-                Err(e) => { return FileInfo::file_error(partial, e, config); }
+                Err(e) => { return FileInfo::file_error(ino_res, e, config); }
                 Ok(hash) => hash,
             };
 
             let hash2 = match other.get_hash(i) {
-                Err(e) => { return FileInfo::file_error(partial, e, config); }
+                Err(e) => { return FileInfo::file_error(ino_res, e, config); }
                 Ok(hash) => hash,
             };
 
             let res = hash1.cmp(&hash2);
-            // debug!("Comparing {} and {} → hash{}={:?}",
-            //        self.path.display(), other.path.display(), i, partial);
             if res != Ordering::Equal {
+                debug!("Comparing {} and {} → hash{}={:?}",
+                       self.path.display(), other.path.display(), i, partial);
                 return res;
             }
 
@@ -216,7 +261,7 @@ fn process_file_or_dir(
                         continue;
                     }
                 }
-                Ok(entry) => entry
+                Ok(metadata) => metadata
             };
 
             if metadata.is_dir() {
@@ -234,6 +279,42 @@ fn process_file_or_dir(
     Ok(())
 }
 
+fn link_file(a: &FileInfo, b: &FileInfo, config: &Config) -> Result<()> {
+    // TODO: what happens if we have files a↔b, c↔d,
+    // and then we link a←c. We should also link a←d.
+
+    if a.metadata.ino() == b.metadata.ino() {
+        info!("Already linked: {} and {}", a.path.display(), b.path.display());
+        return Ok(());
+    }
+
+    // Check that b hasn't been modified in the meantime, e.g. by
+    // us under a different name.
+    let md = b.path.symlink_metadata()?;
+    if md.ino() != b.metadata.ino() {
+        info!("Ignoring changed {}", b.path.display());
+        return Ok(());
+    }
+
+    if config.dry_run {
+        info!("Would link {} ← {}", a.path.display(), b.path.display());
+    } else {
+        let tmp = b.path.with_file_name(format!(".#.{}.tmp", b.path.file_name().unwrap().to_str().unwrap()));
+        fs::hard_link(&a.path, &tmp)?;
+        if let Err(e) = fs::rename(&tmp, &b.path) {
+            // clean up temporary file
+            if let Err(g) = fs::remove_file(&tmp) {
+                warn!("Removal of temporary file {} failed: {}", tmp.display(), g);
+            };
+            return Err(e.into());
+        }
+
+        info!("Linked {} ← {}", a.path.display(), b.path.display());
+    }
+
+    Ok(())
+}
+
 fn link_files(files: Vec<FileInfo>, config: &Config) -> Result<()> {
     let mut linkto: Option<usize> = None;
 
@@ -243,18 +324,12 @@ fn link_files(files: Vec<FileInfo>, config: &Config) -> Result<()> {
     // actual object.
 
     for (n, finfo) in files.iter().enumerate() {
-        info!("File[{}]: {} (linkto: {:?})", n, finfo.path.display(), linkto);
+        // info!("File[{}]: {} (linkto: {:?})", n, finfo.path.display(), linkto);
 
         if linkto.is_some() &&
            FileInfo::compare(&files[linkto.unwrap()], finfo, config) == Ordering::Equal {
 
-            if files[linkto.unwrap()].metadata.ino() == finfo.metadata.ino() {
-                info!("Already linked: {} and {}",
-                      files[linkto.unwrap()].path.display(), finfo.path.display());
-            } else {
-                info!("Would link {} ← {}",
-                      files[linkto.unwrap()].path.display(), finfo.path.display());
-            }
+            link_file(&files[linkto.unwrap()], finfo, config)?;
 
         } else if let FileState::Error = *finfo.file_state.borrow() {
             debug!("Skipping over {} with error…", finfo.path.display());
