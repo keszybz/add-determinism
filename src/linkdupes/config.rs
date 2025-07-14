@@ -88,4 +88,19 @@ impl Config {
             source_date_epoch,
         })
     }
+
+    #[allow(dead_code)]
+    // FIXME: should this be marked as #[cfg(test)]? But then the tests don't compile.
+    pub const fn empty() -> Self {
+        Self {
+            inputs: vec![],
+            fatal_errors: false,
+            _verbose: false,
+            dry_run: false,
+            ignore_mtime: false,
+            ignore_mode: false,
+            ignore_owner: false,
+            source_date_epoch: None,
+        }
+    }
 }

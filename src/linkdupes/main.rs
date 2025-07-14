@@ -147,7 +147,7 @@ impl FileInfo {
     }
 
     fn hash_chunk_size(previous_chunk_count: usize) -> u64 {
-        4096u64 * 2u64.pow(min(previous_chunk_count, 256) as u32)
+        4096u64 * 2u64.pow(min(previous_chunk_count, 8) as u32)
     }
 
     fn get_hash(&self, index: usize) -> Result<Option<u64>> {
@@ -357,4 +357,182 @@ fn main() -> Result<()> {
     link_files(files_seen, &config)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn compare_metadata() {
+        let mut config = Config::empty();
+
+        let file1 = tempfile::NamedTempFile::new().unwrap();
+        let file2 = tempfile::NamedTempFile::new().unwrap();
+        let ts = file2.as_file().metadata().unwrap().modified().unwrap();
+        file1.as_file().set_modified(ts).unwrap();
+
+        let a = FileInfo {
+            path: file1.path().to_path_buf(),
+            metadata: fs::metadata(file1.path()).unwrap(),
+            hashes: vec![1, 2, 3, 4].into(),
+            file_state: FileState::Closed.into(),
+        };
+
+        let b = FileInfo {
+            path: file2.path().to_path_buf(),
+            metadata: fs::metadata(file2.path()).unwrap(),
+            hashes: vec![1, 2, 3, 4].into(),
+            file_state: FileState::Closed.into(),
+        };
+
+        assert_eq!(a.compare(&b, &config), Ordering::Equal);
+
+        b.hashes.borrow_mut().push(5);
+
+        assert_eq!(a.compare(&b, &config), Ordering::Less);
+
+        a.hashes.borrow_mut().push(6);
+
+        assert_eq!(a.compare(&b, &config), Ordering::Greater);
+
+        let a_again = FileInfo {
+            path: "/a/b/c".into(),
+            metadata: a.metadata.clone(),
+            hashes: vec![].into(),
+            file_state: FileState::None.into(),
+        };
+
+        assert_eq!(a.compare(&a_again, &config), Ordering::Equal);
+
+        // Make mtimes smaller
+        file2.as_file().set_modified(
+            ts + time::Duration::new(-30i64, 123)
+        ).unwrap();
+
+        let mut b_again = FileInfo {
+            path: file2.path().to_path_buf(),
+            metadata: fs::metadata(file2.path()).unwrap(),
+            hashes: a.hashes.borrow().clone().into(),
+            file_state: FileState::Closed.into(),
+        };
+
+        assert_eq!(a.compare(&b_again, &config), Ordering::Greater);
+
+        // Make mtimes larger
+        file2.as_file().set_modified(
+            ts + time::Duration::new(30i64, 123)
+        ).unwrap();
+
+        b_again.metadata = fs::metadata(file2.path()).unwrap();
+
+        assert_eq!(a.compare(&b_again, &config), Ordering::Less);
+
+        // Ignore mtimes
+        config.ignore_mtime = true;
+
+        assert_eq!(a.compare(&b_again, &config), Ordering::Equal);
+
+        // Set $SOURCE_DATE_EPOCH
+        config.ignore_mtime = false;
+        config.source_date_epoch = Some(ts);
+
+        assert_eq!(a.compare(&b_again, &config), Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_different_fs() {
+        let config = Config::empty();
+
+        let a = FileInfo {
+            path: "/dev".into(),
+            metadata: fs::metadata("/dev").unwrap(),
+            hashes: vec![].into(),
+            file_state: FileState::Closed.into(),
+        };
+
+        let b = FileInfo {
+            path: "/proc".into(),
+            metadata: fs::metadata("/proc").unwrap(),
+            hashes: vec![].into(),
+            file_state: FileState::Closed.into(),
+        };
+
+        assert_ne!(a.compare(&b, &config), Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_unreadable() {
+        let mut config = Config::empty();
+        config.ignore_mtime = true;
+
+        let file1 = tempfile::NamedTempFile::new().unwrap();
+        let file2 = tempfile::NamedTempFile::new().unwrap();
+
+        fs::set_permissions(file1.path(), fs::Permissions::from_mode(0u32)).unwrap();
+        fs::set_permissions(file2.path(), fs::Permissions::from_mode(0u32)).unwrap();
+
+        let a = FileInfo {
+            path: file1.path().to_path_buf(),
+            metadata: fs::metadata(file1.path()).unwrap(),
+            hashes: vec![].into(),
+            file_state: FileState::None.into(),
+        };
+
+        let b = FileInfo {
+            path: file2.path().to_path_buf(),
+            metadata: fs::metadata(file2.path()).unwrap(),
+            hashes: vec![].into(),
+            file_state: FileState::None.into(),
+        };
+
+        let amiroot = fs::metadata("/proc/self/cmdline").unwrap().uid() == 0;
+        let expected = if amiroot {
+            Ordering::Equal
+        } else {
+            a.metadata.ino().cmp(&b.metadata.ino())
+        };
+        assert_eq!(a.compare(&b, &config), expected);
+    }
+
+    #[test]
+    fn compare_contents() {
+        let mut config = Config::empty();
+        config.ignore_mtime = true;
+
+        let mut file1 = tempfile::NamedTempFile::new().unwrap();
+        let mut file2 = tempfile::NamedTempFile::new().unwrap();
+
+        for (size, chunk_count) in vec![(0, 0), (4, 1), (4092, 1), (4096, 2), (4096*9, 4)] {
+            if size > 0 {
+                let data = Vec::from_iter(std::iter::repeat_n(66u8, size));
+                file1.write(&data).unwrap();
+                file1.flush().unwrap();
+                file2.write(&data).unwrap();
+                file2.flush().unwrap();
+            }
+
+            let a = FileInfo {
+                path: file1.path().to_path_buf(),
+                metadata: fs::metadata(file1.path()).unwrap(),
+                hashes: vec![].into(),
+                file_state: FileState::None.into(),
+            };
+
+            let b = FileInfo {
+                path: file2.path().to_path_buf(),
+                metadata: fs::metadata(file2.path()).unwrap(),
+                hashes: vec![].into(),
+                file_state: FileState::None.into(),
+            };
+
+            assert_eq!(a.compare(&b, &config), Ordering::Equal);
+            assert_eq!(a.hashes.borrow().len(), chunk_count);
+            assert_eq!(b.hashes.borrow().len(), chunk_count);
+            assert_eq!(*a.hashes.borrow(), *b.hashes.borrow());
+            assert!(matches!(*a.file_state.borrow(), FileState::Closed));
+            assert!(matches!(*b.file_state.borrow(), FileState::Closed));
+        }
+    }
 }
