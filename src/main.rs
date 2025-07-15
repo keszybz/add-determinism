@@ -64,11 +64,11 @@ fn main() -> Result<()> {
     let stats;
 
     if let Some(socket) = config.job_socket {
-        debug!("Running as worker on job socket {}", socket);
+        debug!("Running as worker on job socket {socket}");
         return multiprocess::do_worker_work(&config);
 
     } else if let Some(jobs) = config.jobs {
-        debug!("Running as controller with {} workers", jobs);
+        debug!("Running as controller with {jobs} workers");
         stats = multiprocess::Controller::do_work(&config)?;
 
     } else {
