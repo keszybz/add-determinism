@@ -1,5 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+// The args for format!() used in pretty-printers intentionally use a
+// style where the args that are part of the data being printed are
+// not inlined. They are often non-trivial and the format strings are
+// easier to compare if the argument formatting is consistent.
+// The prefix arg, which is _not_ part of the data, is inlined.
+#![allow(clippy::uninlined_format_args)]
+
 use anyhow::{bail, Context, Result};
 use log::{debug, warn};
 use std::cell::RefCell;
