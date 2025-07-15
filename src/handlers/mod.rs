@@ -236,7 +236,7 @@ pub fn do_print(config: &Rc<config::Config>) -> Result<()> {
         handler.pretty_print(&mut w, input_path)?;
     }
 
-    print!("{}", w);
+    print!("{w}");
 
     Ok(())
 }
@@ -427,7 +427,7 @@ impl<'a> InputOutputHelper<'a> {
     ) -> Result<(Self, io::BufReader<File>)> {
 
         let input = File::open(input_path)
-            .with_context(|| format!("Cannot open {:?}", input_path))?;
+            .with_context(|| format!("Cannot open {input_path:?}"))?;
 
         let input_metadata = input.metadata()?;
         let input = io::BufReader::new(input);
@@ -458,7 +458,7 @@ impl<'a> InputOutputHelper<'a> {
                 .open("/dev/null")?;
         } else {
             let input_file_name = unwrap_os_string(self.input_path.file_name().unwrap())?;
-            let output_path = self.input_path.with_file_name(format!(".#.{}.tmp", input_file_name));
+            let output_path = self.input_path.with_file_name(format!(".#.{input_file_name}.tmp"));
 
             let mut openopts = File::options();
             openopts

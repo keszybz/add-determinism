@@ -46,7 +46,7 @@ pub fn init(level: log::LevelFilter, show_pid: bool) -> Result<(), log::SetLogge
     log::set_boxed_logger(Box::new(SimpleLog::new(level, show_pid)))?;
     log::set_max_level(level);
 
-    debug!("Initialized logging with log level {}", level);
+    debug!("Initialized logging with log level {level}");
 
     Ok(())
 }

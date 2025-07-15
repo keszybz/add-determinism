@@ -1,5 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+// The args for format!() used in pretty-printers intentionally use a
+// style where the args that are part of the data being printed are
+// not inlined. They are often non-trivial and the format strings are
+// easier to compare if the argument formatting is consistent.
+// The prefix arg, which is _not_ part of the data, is inlined.
+#![allow(clippy::uninlined_format_args)]
+
 use anyhow::{bail, Context, Result};
 use log::{debug, warn};
 use std::cell::RefCell;
@@ -302,7 +309,7 @@ pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
         3600..=3649 => Ok(((3, 14), 16)),
         3650..=4000 => Ok(((3, 15), 16)),
         _ => Err(super::Error::Other(
-            format!("not a pyc file, unknown version magic {}", val)
+            format!("not a pyc file, unknown version magic {val}")
         ).into()),
     }
 }
@@ -1765,7 +1772,7 @@ impl Pyc {
         W: fmt::Write,
     {
         let input = File::open(input_path)
-            .with_context(|| format!("Cannot open {:?}", input_path))?;
+            .with_context(|| format!("Cannot open {input_path:?}"))?;
         let mut parser = PycParser::from_file(input_path, input)?;
 
         let obj = parser.read_object()?;

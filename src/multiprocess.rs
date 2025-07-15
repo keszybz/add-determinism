@@ -68,13 +68,13 @@ impl Controller {
         let newsize = cmp::min(n, 256) * 4096;
 
         let mut sndbuf = sys::socket::getsockopt(fd, sys::socket::sockopt::SndBuf)?;
-        debug!("Initial socket buffer size: {}", sndbuf);
+        debug!("Initial socket buffer size: {sndbuf}");
 
         if newsize > sndbuf {
             sys::socket::setsockopt(fd, sys::socket::sockopt::SndBuf, &newsize)?;
 
             sndbuf = sys::socket::getsockopt(fd, sys::socket::sockopt::SndBuf)?;
-            debug!("Tried to set socket buffer size to {}, got {}", newsize, sndbuf);
+            debug!("Tried to set socket buffer size to {newsize}, got {sndbuf}");
 
             #[cfg(any(target_os = "android", target_os = "linux"))]
             if newsize > sndbuf {
@@ -83,10 +83,10 @@ impl Controller {
                     sys::socket::sockopt::SndBufForce,
                     &newsize,
                 ) {
-                    debug!("Cannot set buffer size to {}: {}", newsize, err);
+                    debug!("Cannot set buffer size to {newsize}: {err}");
                 } else {
                     sndbuf = sys::socket::getsockopt(fd, sys::socket::sockopt::SndBuf)?;
-                    debug!("Tried to force socket buffer size to {}, got {}", newsize, sndbuf);
+                    debug!("Tried to force socket buffer size to {newsize}, got {sndbuf}");
                 }
             }
         }
@@ -121,7 +121,7 @@ impl Controller {
 
         let n2 = Self::set_socket_size(&job_sockets.0, n)?;
         if n2 < n {
-            info!("Limiting number of workers to {}", n2);
+            info!("Limiting number of workers to {n2}");
             n = n2;
         }
 
@@ -300,7 +300,7 @@ pub fn do_worker_work(config: &Rc<config::Config>) -> Result<()> {
         }
 
         let job: Job = serde_cbor::de::from_mut_slice(&mut buf[..n])?;
-        debug!("Got job {:?}", job);
+        debug!("Got job {job:?}");
 
         assert!(job.selected_handlers > 0);
 
