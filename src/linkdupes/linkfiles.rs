@@ -13,6 +13,47 @@ use std::fs;
 
 use crate::config::Config;
 
+#[derive(Debug, Default, PartialEq)]
+pub struct Stats {
+    /// Count of directories that were scanned. This includes both
+    /// command-line arguments and subdirectories found in recursive
+    /// processing.
+    pub directories: u64,
+
+    /// Count of file paths that were scanned. This includes both
+    /// command-line arguments and paths found in recursive
+    /// processing.
+    pub files: u64,
+
+    pub candidate_files: u64,
+
+    /// Count of files that we read or attempted to read
+    pub files_read: u64,
+
+    /// Count of files that we linked
+    pub files_linked: u64,
+
+    /// Count of files that couldn't be processed
+    pub errors: u64,
+
+    /// Summary of sizes of files that were linked
+    pub bytes_linked: u64,
+}
+
+impl Stats {
+    pub fn new() -> Self { Default::default() }
+
+    pub fn summarize(&self) {
+        info!(
+            "Scanned {} directories and {} files,
+    considered {} files, read {} files, linked {} files, {} errors
+    sum of sizes of linked files: {} bytes",
+            self.directories, self.files,
+            self.candidate_files, self.files_read, self.files_linked, self.errors,
+            self.bytes_linked);
+    }
+}
+
 #[derive(Debug)]
 enum FileState {
     None,
@@ -39,7 +80,11 @@ impl FileInfo {
         }
     }
 
-    fn compare(&self, other: &FileInfo, config: &Config) -> Ordering {
+    fn compare(
+        &self,
+        other: &FileInfo,
+        config: &Config,
+    ) -> Ordering {
         // Return LT, EQ, or GT for the comparison of the two files.
         // We may fail to read one or both of the files.
         // In that case, say that they are *not equal*, and the one with
@@ -232,6 +277,7 @@ fn process_file_or_dir(
     files_seen: &mut Vec<FileInfo>,
     input_path: &Path,
     config: &Config,
+    stats: &mut Stats,
 ) -> Result<()> {
 
     for entry in walkdir::WalkDir::new(input_path)
@@ -239,6 +285,7 @@ fn process_file_or_dir(
         .into_iter() {
             let entry = match entry {
                 Err(e) => {
+                    stats.errors += 1;
                     if config.fatal_errors {
                         return Err(e.into());
                     } else {
@@ -253,6 +300,7 @@ fn process_file_or_dir(
 
             let metadata = match entry.metadata() {
                 Err(e) => {
+                    stats.errors += 1;
                     if config.fatal_errors {
                         return Err(e.into());
                     } else {
@@ -264,27 +312,31 @@ fn process_file_or_dir(
             };
 
             if metadata.is_dir() {
+                stats.directories += 1;
                 continue;
             }
+
+            stats.files += 1;
 
             if !metadata.is_file() {
                 debug!("{}: not a file", entry.path().display());
                 continue;
             }
 
+            stats.candidate_files += 1;
             files_seen.push(FileInfo::new(entry.path().to_path_buf(), metadata));
         }
 
     Ok(())
 }
 
-fn link_file(a: &FileInfo, b: &FileInfo, config: &Config) -> Result<()> {
+fn link_file(a: &FileInfo, b: &FileInfo, config: &Config) -> Result<bool> {
     // TODO: what happens if we have files a↔b, c↔d,
     // and then we link a←c. We should also link a←d.
 
     if a.metadata.ino() == b.metadata.ino() {
         info!("Already linked: {} and {}", a.path.display(), b.path.display());
-        return Ok(());
+        return Ok(false);
     }
 
     // Check that b hasn't been modified in the meantime, e.g. by
@@ -292,7 +344,7 @@ fn link_file(a: &FileInfo, b: &FileInfo, config: &Config) -> Result<()> {
     let md = b.path.symlink_metadata()?;
     if md.ino() != b.metadata.ino() {
         info!("Ignoring changed {}", b.path.display());
-        return Ok(());
+        return Ok(false);
     }
 
     if config.dry_run {
@@ -311,10 +363,14 @@ fn link_file(a: &FileInfo, b: &FileInfo, config: &Config) -> Result<()> {
         info!("Linked {} ← {}", a.path.display(), b.path.display());
     }
 
-    Ok(())
+    Ok(true)
 }
 
-fn link_files(files: Vec<FileInfo>, config: &Config) -> Result<()> {
+fn link_files(
+    files: Vec<FileInfo>,
+    config: &Config,
+    stats: &mut Stats,
+) -> Result<()> {
     let mut linkto: Option<usize> = None;
 
     // index is used as a workaround here. I expected .into_iter() to give me
@@ -322,14 +378,37 @@ fn link_files(files: Vec<FileInfo>, config: &Config) -> Result<()> {
     // reference outlives the scope. No idea how to go from a reference to the
     // actual object.
 
+    // We update the statistics on files here. We're iterating over the files
+    // anyway, so we can do that with very little overhead.
+
     for (n, finfo) in files.iter().enumerate() {
         // info!("File[{}]: {} (linkto: {:?})", n, finfo.path.display(), linkto);
+
+        if let FileState::None = *finfo.file_state.borrow() { } else {
+            stats.files_read += 1;
+        }
 
         if linkto.is_some() &&
            FileInfo::compare(&files[linkto.unwrap()], finfo, config) == Ordering::Equal {
 
-            link_file(&files[linkto.unwrap()], finfo, config)?;
-
+            match link_file(&files[linkto.unwrap()], finfo, config) {
+                Ok(res) => {
+                    if res {
+                        stats.files_linked += 1;
+                        // TODO: how to correctly count the case when the linked file was already linked
+                        stats.bytes_linked += finfo.metadata.len();
+                    }
+                }
+                Err(e) => {
+                    if config.fatal_errors {
+                        return Err(e.into());
+                    } else {
+                        stats.errors += 1;
+                        warn!("{}: failed to link to {}: {}",
+                              files[linkto.unwrap()].path.display(), finfo.path.display(), e);
+                    }
+                }
+            }
         } else if let FileState::Error = *finfo.file_state.borrow() {
             debug!("Skipping over {} with error…", finfo.path.display());
 
@@ -341,17 +420,19 @@ fn link_files(files: Vec<FileInfo>, config: &Config) -> Result<()> {
     Ok(())
 }
 
-pub fn process_inputs(config: &Config) -> Result<()> {
+pub fn process_inputs(config: &Config) -> Result<Stats> {
     let mut files_seen = vec![];
+    let mut stats = Stats::new();
+
     for input_path in &config.inputs {
-        process_file_or_dir(&mut files_seen, input_path, &config)?;
+        process_file_or_dir(&mut files_seen, input_path, &config, &mut stats)?;
     }
 
     files_seen.sort_by(|a, b| FileInfo::compare(a, b, &config));
 
-    link_files(files_seen, &config)?;
+    link_files(files_seen, &config, &mut stats)?;
 
-    Ok(())
+    Ok(stats)
 }
 
 #[cfg(test)]

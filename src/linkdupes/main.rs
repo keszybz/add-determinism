@@ -12,7 +12,9 @@ fn main() -> Result<()> {
 
     rlimit::increase_nofile_limit(u64::MAX)?;
 
-    linkfiles::process_inputs(&config)?;
+    let stats = linkfiles::process_inputs(&config)?;
+
+    stats.summarize();
     
     Ok(())
 }
