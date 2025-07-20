@@ -23,11 +23,11 @@ struct Options {
     pub brp: bool,
 
     /// Turn on debugging output
-    #[arg(short, long)]
-    pub verbose: bool,
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
 
     /// Turn on debugging output
-    #[arg(long)]
+    #[arg(short = 'n', long)]
     pub dry_run: bool,
 
     /// Link even if mtimes are different
@@ -46,7 +46,7 @@ struct Options {
 pub struct Config {
     pub inputs: Vec<PathBuf>,
     pub fatal_errors: bool,
-    pub _verbose: bool,
+    pub _verbose: u8,
     pub dry_run: bool,
     pub ignore_mtime: bool,
     pub ignore_mode: bool,
@@ -59,7 +59,13 @@ impl Config {
         let options = Options::parse();
 
         // log level
-        let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
+        let log_level = match options.verbose {
+            0 => LevelFilter::Warn,
+            1 => LevelFilter::Info,
+            2 => LevelFilter::Debug,
+            3.. => LevelFilter::Trace,
+        };
+
         simplelog::init(log_level, false)?;
 
         // $SOURCE_DATE_EPOCH
@@ -95,7 +101,7 @@ impl Config {
         Self {
             inputs: vec![],
             fatal_errors: false,
-            _verbose: false,
+            _verbose: 0,
             dry_run: false,
             ignore_mtime: false,
             ignore_mode: false,

@@ -44,7 +44,7 @@ impl Stats {
     pub fn new() -> Self { Default::default() }
 
     pub fn summarize(&self) {
-        info!(
+        println!(
             "Scanned {} directories and {} files,
     considered {} files, read {} files, linked {} files, {} errors
     sum of sizes of linked files: {} bytes",
