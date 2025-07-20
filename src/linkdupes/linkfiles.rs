@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::{bail, Error, Result};
-use log::{debug, info, warn};
+use log::{trace, debug, info, warn};
 
 use std::cmp::{min, Ordering};
 use std::hash::{DefaultHasher, Hasher};
@@ -95,27 +95,28 @@ impl FileInfo {
 
         // If files have different size, the contents are different by definition.
         let mut partial = ms.len().cmp(&mo.len());
-        // debug!("Comparing {} and {} → size={:?}", self.path.display(), other.path.display(), partial);
         if partial != Ordering::Equal {
+            trace!("Comparing {} and {} → size={:?}", self.path.display(), other.path.display(), partial);
             return partial;
         }
 
         partial = ms.dev().cmp(&mo.dev());
         if partial != Ordering::Equal {
+            trace!("Comparing {} and {} → filesystem={:?}", self.path.display(), other.path.display(), partial);
             return partial;
         }
 
         // If files point at the same inode, the contents are equal by definition.
         let ino_res = ms.ino().cmp(&mo.ino());
-        // debug!("Comparing {} and {} → inode={:?}", self.path.display(), other.path.display(), partial);
         if ino_res == Ordering::Equal {
+            trace!("Comparing {} and {} → inode={:?}", self.path.display(), other.path.display(), partial);
             return ino_res;
         }
 
         if !config.ignore_mode {
             partial = ms.permissions().mode().cmp(&mo.permissions().mode());
             if partial != Ordering::Equal {
-                debug!("Comparing {} and {} → mode={:?}", self.path.display(), other.path.display(), partial);
+                trace!("Comparing {} and {} → mode={:?}", self.path.display(), other.path.display(), partial);
                 return partial;
             }
         }
@@ -123,13 +124,13 @@ impl FileInfo {
         if !config.ignore_owner {
             partial = ms.uid().cmp(&mo.uid());
             if partial != Ordering::Equal {
-                debug!("Comparing {} and {} → uid={:?}", self.path.display(), other.path.display(), partial);
+                trace!("Comparing {} and {} → uid={:?}", self.path.display(), other.path.display(), partial);
                 return partial;
             }
 
             partial = ms.gid().cmp(&mo.gid());
             if partial != Ordering::Equal {
-                debug!("Comparing {} and {} → gid={:?}", self.path.display(), other.path.display(), partial);
+                trace!("Comparing {} and {} → gid={:?}", self.path.display(), other.path.display(), partial);
                 return partial;
             }
         }
@@ -148,14 +149,14 @@ impl FileInfo {
 
             partial = t1.cmp(&t2);
             if partial != Ordering::Equal {
-                debug!("Comparing {} and {} → mtime={:?}", self.path.display(), other.path.display(), partial);
+                trace!("Comparing {} and {} → mtime={:?}", self.path.display(), other.path.display(), partial);
                 return partial;
             }
         }
 
         // If the file is empty, we don't need to open it to compare.
         if ms.len() == 0 {
-            debug!("Comparing {} and {} → size=0, {:?}",
+            trace!("Comparing {} and {} → size=0, {:?}",
                    self.path.display(), other.path.display(), Ordering::Equal);
             return Ordering::Equal;
         }
@@ -173,13 +174,15 @@ impl FileInfo {
 
             let res = hash1.cmp(&hash2);
             if res != Ordering::Equal {
-                debug!("Comparing {} and {} → hash{}={:?}",
+                trace!("Comparing {} and {} → hash{}={:?}",
                        self.path.display(), other.path.display(), i, partial);
                 return res;
             }
 
             if hash1.is_none() && hash2.is_none() {
                 // Both files have been read
+                trace!("Comparing {} and {} → contents={:?}",
+                       self.path.display(), other.path.display(), Ordering::Equal);
                 return Ordering::Equal;
             }
         }
@@ -208,8 +211,6 @@ impl FileInfo {
 
         // We always read the partial hashes one by one, so get_hash()
         // should never jump over an index.
-        // debug!("{}: get_hash({}) [have {}]", self.path.display(), index,
-        //        self.hashes.borrow().len());
         assert!(index <= self.hashes.borrow().len());
 
         self.get_next_hash()
@@ -224,8 +225,6 @@ impl FileInfo {
 
         match *file_state {
             FileState::None => {
-                // debug!("Opening {}…", self.path.display());
-
                 // Open file, store the error if encountered.
                 match fs::File::open(&self.path) {
                     Ok(f) => {
@@ -253,8 +252,6 @@ impl FileInfo {
 
         let mut buffer = Vec::new();
 
-        // debug!("{}: reading {} bytes at offset {}",
-        //        self.path.display(), chunk_size, file.stream_position().unwrap());
         let count = match file.take(chunk_size).read_to_end(&mut buffer) {
             Ok(count) => count,
             Err(e) => {
@@ -303,8 +300,6 @@ fn process_file_or_dir(
                 Ok(entry) => entry
             };
 
-            // debug!("Looking at {}…", entry.path().display());
-
             let metadata = match entry.metadata() {
                 Err(e) => {
                     stats.errors += 1;
@@ -342,7 +337,7 @@ fn link_file(a: &FileInfo, b: &FileInfo, config: &Config) -> Result<bool> {
     // and then we link a←c. We should also link a←d.
 
     if a.metadata.ino() == b.metadata.ino() {
-        info!("Already linked: {} and {}", a.path.display(), b.path.display());
+        debug!("Already linked: {} and {}", a.path.display(), b.path.display());
         return Ok(false);
     }
 
@@ -350,7 +345,7 @@ fn link_file(a: &FileInfo, b: &FileInfo, config: &Config) -> Result<bool> {
     // us under a different name.
     let md = b.path.symlink_metadata()?;
     if md.ino() != b.metadata.ino() {
-        info!("Ignoring changed {}", b.path.display());
+        debug!("Ignoring changed {}", b.path.display());
         return Ok(false);
     }
 
@@ -389,8 +384,6 @@ fn link_files(
     // anyway, so we can do that with very little overhead.
 
     for (n, finfo) in files.iter().enumerate() {
-        // info!("File[{}]: {} (linkto: {:?})", n, finfo.path.display(), linkto);
-
         if let FileState::None = *finfo.file_state.borrow() { } else {
             stats.files_read += 1;
         }
@@ -417,7 +410,7 @@ fn link_files(
                 }
             }
         } else if let FileState::Error = *finfo.file_state.borrow() {
-            debug!("Skipping over {} with error…", finfo.path.display());
+            trace!("Skipping over {} with error…", finfo.path.display());
 
         } else {
             linkto = Some(n);
