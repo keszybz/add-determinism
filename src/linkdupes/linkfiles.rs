@@ -153,6 +153,13 @@ impl FileInfo {
             }
         }
 
+        // If the file is empty, we don't need to open it to compare.
+        if ms.len() == 0 {
+            debug!("Comparing {} and {} → size=0, {:?}",
+                   self.path.display(), other.path.display(), Ordering::Equal);
+            return Ordering::Equal;
+        }
+
         for i in 0.. {
             let hash1 = match self.get_hash(i) {
                 Err(e) => { return FileInfo::file_error(ino_res, e, config); }
@@ -444,8 +451,12 @@ mod tests {
     fn compare_metadata() {
         let mut config = Config::empty();
 
-        let file1 = tempfile::NamedTempFile::new().unwrap();
-        let file2 = tempfile::NamedTempFile::new().unwrap();
+        let mut file1 = tempfile::NamedTempFile::new().unwrap();
+        let mut file2 = tempfile::NamedTempFile::new().unwrap();
+
+        file1.write(b"0").unwrap();
+        file2.write(b"0").unwrap();
+
         let ts = file2.as_file().metadata().unwrap().modified().unwrap();
         file1.as_file().set_modified(ts).unwrap();
 
@@ -543,8 +554,11 @@ mod tests {
         let mut config = Config::empty();
         config.ignore_mtime = true;
 
-        let file1 = tempfile::NamedTempFile::new().unwrap();
-        let file2 = tempfile::NamedTempFile::new().unwrap();
+        let mut file1 = tempfile::NamedTempFile::new().unwrap();
+        let mut file2 = tempfile::NamedTempFile::new().unwrap();
+
+        file1.write(b"0").unwrap();
+        file2.write(b"0").unwrap();
 
         fs::set_permissions(file1.path(), fs::Permissions::from_mode(0u32)).unwrap();
         fs::set_permissions(file2.path(), fs::Permissions::from_mode(0u32)).unwrap();
@@ -607,8 +621,9 @@ mod tests {
             assert_eq!(a.hashes.borrow().len(), chunk_count);
             assert_eq!(b.hashes.borrow().len(), chunk_count);
             assert_eq!(*a.hashes.borrow(), *b.hashes.borrow());
-            assert!(matches!(*a.file_state.borrow(), FileState::Closed));
-            assert!(matches!(*b.file_state.borrow(), FileState::Closed));
+            let _exp_state = if size > 0 { FileState::Closed } else { FileState::None };
+            assert!(matches!(a.file_state.borrow(), _exp_state));
+            assert!(matches!(b.file_state.borrow(), _exp_state));
         }
     }
 }
