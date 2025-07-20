@@ -408,7 +408,7 @@ fn link_files(
                 }
                 Err(e) => {
                     if config.fatal_errors {
-                        return Err(e.into());
+                        return Err(e);
                     } else {
                         stats.errors += 1;
                         warn!("{}: failed to link to {}: {}",
@@ -432,12 +432,12 @@ pub fn process_inputs(config: &Config) -> Result<Stats> {
     let mut stats = Stats::new();
 
     for input_path in &config.inputs {
-        process_file_or_dir(&mut files_seen, input_path, &config, &mut stats)?;
+        process_file_or_dir(&mut files_seen, input_path, config, &mut stats)?;
     }
 
-    files_seen.sort_by(|a, b| FileInfo::compare(a, b, &config));
+    files_seen.sort_by(|a, b| FileInfo::compare(a, b, config));
 
-    link_files(files_seen, &config, &mut stats)?;
+    link_files(files_seen, config, &mut stats)?;
 
     Ok(stats)
 }
