@@ -390,6 +390,7 @@ pub struct InputOutputHelper<'a> {
     pub input_path: &'a Path,
     pub input_metadata: Metadata,
 
+    // those two are set when .open_output is called
     pub output_path: Option<PathBuf>,
     pub output: Option<File>,
 
@@ -399,11 +400,13 @@ pub struct InputOutputHelper<'a> {
 
 impl Drop for InputOutputHelper<'_> {
     fn drop(&mut self) {
-        if let Some(output_path) = self.output_path.take() {
-            debug!("{}: discarding temporary copy", output_path.display());
-            if let Err(e) = fs::remove_file(output_path) {
-                if e.kind() != io::ErrorKind::NotFound {
-                    warn!("Failed to remove {}: {}", self.input_path.display(), e);
+        if !self.check {
+            if let Some(output_path) = self.output_path.take() {
+                debug!("{}: discarding temporary copy", output_path.display());
+                if let Err(e) = fs::remove_file(output_path) {
+                    if e.kind() != io::ErrorKind::NotFound {
+                        warn!("Failed to remove {}: {}", self.input_path.display(), e);
+                    }
                 }
             }
         }
@@ -448,17 +451,18 @@ impl<'a> InputOutputHelper<'a> {
         assert!(self.output_path.is_none());
         assert!(self.output.is_none());
 
-        let output;
+        let (output, output_path);
 
         if self.check {
             // TODO: use std::io::Sink here
+            output_path = PathBuf::from("/dev/null");
             output = File::options()
                 .read(true)
                 .write(true)
                 .open("/dev/null")?;
         } else {
             let input_file_name = unwrap_os_string(self.input_path.file_name().unwrap())?;
-            let output_path = self.input_path.with_file_name(format!(".#.{input_file_name}.tmp"));
+            output_path = self.input_path.with_file_name(format!(".#.{input_file_name}.tmp"));
 
             let mut openopts = File::options();
             openopts
@@ -478,9 +482,9 @@ impl<'a> InputOutputHelper<'a> {
                     openopts.open(&output_path)?
                 }
             };
-            self.output_path = Some(output_path);
         }
 
+        self.output_path = Some(output_path);
         self.output = Some(output);
         Ok(())
     }
@@ -491,8 +495,7 @@ impl<'a> InputOutputHelper<'a> {
         if !have_mod {
             Ok(ProcessResult::Noop)
 
-        } else if self.output_path.is_none() {
-            assert!(self.check);
+        } else if self.check {
             // nothing to do, we're using a fake output
             Ok(
                 if meta.nlink() == 1 {
