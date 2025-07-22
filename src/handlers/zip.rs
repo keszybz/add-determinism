@@ -70,9 +70,9 @@ impl super::Processor for Zip {
         let (mut io, input) = InputOutputHelper::open(input_path, self.config.check, true)?;
         let mut input = zip::ZipArchive::new(input)?;
 
-        io.open_output()?;
+        io.open_output(true)?;
 
-        let output = BufWriter::new(io.output.as_ref().unwrap());
+        let output = BufWriter::new(io.output.as_ref().unwrap().as_file());
         let mut output = zip::ZipWriter::new(output);
 
         for i in 0..input.len() {
@@ -95,11 +95,11 @@ impl super::Processor for Zip {
             debug!("Epoch as buffer: {ts:?}");
 
             // Open output again to adjust timestamps
-            let output_path = io.output_path.as_ref().unwrap();
+            let output_path = io.output.as_ref().unwrap().path().to_path_buf();
             let mut output =
-                zip::ZipArchive::new(BufReader::new(File::open(output_path)?))?;
+                zip::ZipArchive::new(BufReader::new(File::open(&output_path)?))?;
 
-            let overwrite = io.output.as_mut().unwrap();
+            let overwrite = io.output.as_mut().unwrap().as_file_mut();
 
             for i in 0..output.len() {
                 let file = output.by_index(i)?;
@@ -119,7 +119,7 @@ impl super::Processor for Zip {
                             let header_offset = file.header_start();
 
                             debug!("{}: {}: seeking to 0x{:08x} (local file header)",
-                                   io.output_path.as_ref().unwrap().display(),
+                                   output_path.display(),
                                    file.name(),
                                    header_offset);
 
@@ -134,7 +134,7 @@ impl super::Processor for Zip {
                             let header_offset = file.central_header_start();
 
                             debug!("{}: {}: seeking to 0x{:08x} (central file header)",
-                                   io.output_path.as_ref().unwrap().display(),
+                                   output_path.display(),
                                    file.name(),
                                    header_offset);
 
@@ -166,7 +166,7 @@ impl super::Processor for Zip {
                 // check if the rewritten file has different size,
                 // which indicates that we dropped some metadata.
 
-                have_mod = io.output.as_mut().unwrap().metadata()?.len() != io.input_metadata.len();
+                have_mod = io.output.as_mut().unwrap().as_file_mut().metadata()?.len() != io.input_metadata.len();
             }
 
         io.finalize(have_mod)

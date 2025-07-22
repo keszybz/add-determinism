@@ -76,8 +76,8 @@ impl super::Processor for Gzip {
               self.unix_epoch.unwrap(),
               chrono::DateTime::from_timestamp(self.unix_epoch.unwrap() as i64, 0).unwrap());
 
-        io.open_output()?;
-        let mut output = BufWriter::new(io.output.as_mut().unwrap());
+        io.open_output(false)?;
+        let mut output = BufWriter::new(io.output.as_mut().unwrap().as_file_mut());
 
         output.write_all(&buf)?;
 

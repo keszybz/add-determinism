@@ -89,8 +89,8 @@ impl super::Processor for Javadoc {
 
         let (mut io, input) = InputOutputHelper::open(input_path, self.config.check, true)?;
 
-        io.open_output()?;
-        let mut output = BufWriter::new(io.output.as_mut().unwrap());
+        io.open_output(false)?;
+        let mut output = BufWriter::new(io.output.as_mut().unwrap().as_file_mut());
 
         let head_end_re = RegexBuilder::new(r"</head>")
             .case_insensitive(true)

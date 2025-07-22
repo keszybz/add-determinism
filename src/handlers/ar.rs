@@ -67,8 +67,8 @@ impl super::Processor for Ar {
             return Err(super::Error::BadMagic(0, buf.to_vec(), MAGIC).into());
         }
 
-        io.open_output()?;
-        let mut output = BufWriter::new(io.output.as_mut().unwrap());
+        io.open_output(false)?;
+        let mut output = BufWriter::new(io.output.as_mut().unwrap().as_file_mut());
 
         output.write_all(&buf)?;
 

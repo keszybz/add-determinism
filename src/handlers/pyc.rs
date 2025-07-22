@@ -1758,8 +1758,8 @@ impl super::Processor for Pyc {
         let have_mod = new != parser.data;
 
         if have_mod {
-            io.open_output()?;
-            io.output.as_mut().unwrap().write_all(&new)?;
+            io.open_output(false)?;
+            io.output.as_mut().unwrap().as_file_mut().write_all(&new)?;
         }
 
         io.finalize(have_mod)
@@ -1842,8 +1842,8 @@ impl super::Processor for PycZeroMtime {
         let have_mod = parser.set_zero_mtime()?;
 
         if have_mod {
-            io.open_output()?;
-            io.output.as_mut().unwrap().write_all(&parser.data)?;
+            io.open_output(false)?;
+            io.output.as_mut().unwrap().as_file_mut().write_all(&parser.data)?;
         }
 
         let res = io.finalize(have_mod)?;

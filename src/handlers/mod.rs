@@ -18,8 +18,9 @@ use std::fs::{File, Metadata};
 use std::io::{self, Seek};
 use std::os::unix::fs as unix_fs;
 use std::os::unix::fs::MetadataExt as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
+use tempfile::NamedTempFile;
 use thiserror::Error;
 
 #[cfg(target_os = "linux")]
@@ -399,9 +400,8 @@ pub struct InputOutputHelper<'a> {
     pub input_path: &'a Path,
     pub input_metadata: Metadata,
 
-    // those two are set when .open_output is called
-    pub output_path: Option<PathBuf>,
-    pub output: Option<File>,
+    // this is set when .open_output is called
+    pub output: Option<NamedTempFile>,
 
     pub check: bool,
     pub verbose: bool,  // include logging about each modified file
@@ -409,13 +409,11 @@ pub struct InputOutputHelper<'a> {
 
 impl Drop for InputOutputHelper<'_> {
     fn drop(&mut self) {
-        if !self.check {
-            if let Some(output_path) = self.output_path.take() {
-                debug!("{}: discarding temporary copy", output_path.display());
-                if let Err(e) = fs::remove_file(output_path) {
-                    if e.kind() != io::ErrorKind::NotFound {
-                        warn!("Failed to remove {}: {}", self.input_path.display(), e);
-                    }
+        if let Some(f) = self.output.take() {
+            debug!("{}: discarding temporary copy", f.path().display());
+            if let Err(e) = f.close() {
+                if e.kind() != io::ErrorKind::NotFound {
+                    warn!("Failed to remove tempfile for {}: {}", self.input_path.display(), e);
                 }
             }
         }
@@ -438,7 +436,6 @@ impl<'a> InputOutputHelper<'a> {
         let io = InputOutputHelper {
             input_path,
             input_metadata,
-            output_path: None,
             output: None,
             check,
             verbose,
@@ -447,45 +444,33 @@ impl<'a> InputOutputHelper<'a> {
         Ok((io, input))
     }
 
-    pub fn open_output(&mut self) -> Result<()> {
-        assert!(self.output_path.is_none());
+    pub fn open_output(&mut self, need_real_file_for_check: bool) -> Result<()> {
         assert!(self.output.is_none());
 
-        let (output, output_path);
-
-        if self.check {
-            // TODO: use std::io::Sink here
-            output_path = PathBuf::from("/dev/null");
-            output = File::options()
-                .read(true)
-                .write(true)
-                .open("/dev/null")?;
+        let tmpfile = if self.check && !need_real_file_for_check {
+            tempfile::Builder::new()
+                .disable_cleanup(true)
+                .make(|_| File::options()
+                      .read(true)
+                      .write(true)
+                      .open("/dev/null"))?
         } else {
-            let input_file_name = unwrap_os_string(self.input_path.file_name().unwrap())?;
-            output_path = self.input_path.with_file_name(format!(".#.{input_file_name}.tmp"));
+            let prefix = format!(
+                ".#.{}",
+                self.input_path.file_name().and_then(|s| s.to_str()).unwrap_or("tmp")
+            );
 
-            let mut openopts = File::options();
-            openopts
-                .read(true)
-                .write(true)
-                .create_new(true);
+            if self.check {
+                NamedTempFile::with_prefix(prefix)?
+            } else {
+                // We need to create the temporary file in the same
+                // location as the real file so that rename works.
+                NamedTempFile::with_prefix_in(prefix, self.input_path.parent().unwrap())?
+            }
+        };
 
-            output = match openopts.open(&output_path) {
-                Ok(some) => some,
-                Err(e) => {
-                    if e.kind() != io::ErrorKind::AlreadyExists {
-                        bail!("{}: cannot open temporary file: {}", output_path.display(), e);
-                    }
+        self.output = Some(tmpfile);
 
-                    info!("{}: stale temporary file found, removing", output_path.display());
-                    fs::remove_file(&output_path)?;
-                    openopts.open(&output_path)?
-                }
-            };
-        }
-
-        self.output_path = Some(output_path);
-        self.output = Some(output);
         Ok(())
     }
 
@@ -506,25 +491,7 @@ impl<'a> InputOutputHelper<'a> {
             )
 
         } else {
-            let output_path = self.output_path.as_ref().unwrap();
-
-            let mut output = self.output.as_mut();
-            let mut fallback_output;
-
-            if output.is_none() {
-                fallback_output = match File::open(output_path) {
-                    Ok(some) => Some(some),
-                    Err(e) => {
-                        if e.kind() == io::ErrorKind::NotFound {
-                            return Ok(ProcessResult::Noop); // no modifications and nothing to do
-                        } else {
-                            bail!("{}: cannot reopen temporary file: {}", output_path.display(), e);
-                        }
-                    }
-                };
-                output = fallback_output.as_mut();
-            }
-            let output = output.unwrap();
+            let output = self.output.as_mut().unwrap();
 
             // If the original file has nlinks == 1, we atomically replace it.
             // If it has multiple links, we reopen the original file and rewrite it.
@@ -533,21 +500,21 @@ impl<'a> InputOutputHelper<'a> {
                 log!(if self.verbose { Level::Info } else { Level::Debug },
                      "{}: replacing with normalized version", self.input_path.display());
 
-                if !self.check {
-                    output.set_permissions(meta.permissions())?;
-                    output.set_modified(meta.modified()?)?;
+                output.disable_cleanup(true);
 
-                    if let Err(e) = unix_fs::lchown(output_path, Some(meta.st_uid()), Some(meta.st_gid())) {
-                        if e.kind() == io::ErrorKind::PermissionDenied {
-                            warn!("{}: cannot change file ownership, ignoring", self.input_path.display());
-                        } else {
-                            bail!("{}: cannot change file ownership: {}", self.input_path.display(), e);
-                        }
+                output.as_file_mut().set_permissions(meta.permissions())?;
+                output.as_file_mut().set_modified(meta.modified()?)?;
+
+                if let Err(e) = unix_fs::lchown(output.path(), Some(meta.st_uid()), Some(meta.st_gid())) {
+                    if e.kind() == io::ErrorKind::PermissionDenied {
+                        warn!("{}: cannot change file ownership, ignoring", output.path().display());
+                    } else {
+                        bail!("{}: cannot change file ownership: {}", output.path().display(), e);
                     }
-
-                    fs::rename(output_path, self.input_path)?;
-                    self.output_path = None; /* The path is now invalid */
                 }
+
+                fs::rename(output.path(), self.input_path)?;
+                self.output.take();   /* The output is now invalid */
 
                 Ok(ProcessResult::Replaced)
 
@@ -555,15 +522,15 @@ impl<'a> InputOutputHelper<'a> {
                 log!(if self.verbose { Level::Info } else { Level::Debug },
                      "{}: rewriting with normalized contents", self.input_path.display());
 
-                if !self.check {
-                    output.seek(io::SeekFrom::Start(0))?;
+                let file = output.as_file_mut();
 
-                    let mut input_writer = File::options().write(true).open(self.input_path)?;
-                    let len = io::copy(output, &mut input_writer)?;
-                    // truncate the file in case it was originally longer
-                    input_writer.set_len(len)?;
-                    input_writer.set_modified(meta.modified()?)?;
-                }
+                file.seek(io::SeekFrom::Start(0))?;
+
+                let mut input_writer = File::options().write(true).open(self.input_path)?;
+                let len = io::copy(file, &mut input_writer)?;
+                // truncate the file in case it was originally longer
+                input_writer.set_len(len)?;
+                input_writer.set_modified(meta.modified()?)?;
 
                 Ok(ProcessResult::Rewritten)
             }

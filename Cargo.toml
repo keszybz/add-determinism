@@ -175,13 +175,11 @@ num-traits = "0.2.19"
 regex = { version = "1.10.0", default-features = false, features = ["std", "perf", "unicode-case"] }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_cbor = "0.11"
+tempfile = "3.20"
 thiserror = "1.0.61"
 time = "0.3.34"
 walkdir = "2.5.0"
 zip = { version = "0.6.0", default-features = false, features = ["deflate", "deflate-zlib", "time"] }
-
-[dev-dependencies]
-tempfile = "3"
 
 [profile.release]
 lto = true

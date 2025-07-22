@@ -57,11 +57,29 @@ fn test_input_output_helper_drop() {
     let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
     let (mut helper, _) = handlers::InputOutputHelper::open(&*input, false, false).unwrap();
-    helper.open_output().unwrap();
+    helper.open_output(false).unwrap();
 
-    let output_path = helper.output_path.as_ref().unwrap().clone();
+    let output_path = helper.output.as_ref().unwrap().path().to_path_buf();
 
     assert!(output_path.exists());
+    drop(helper);
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn test_input_output_helper_drop_no_file() {
+    let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
+
+    let (mut helper, _) = handlers::InputOutputHelper::open(&*input, true, false).unwrap();
+    helper.open_output(false).unwrap();
+
+    let output_path = helper.output.as_ref().unwrap().path().to_path_buf();
+
+    // tempfile.make() gives as a temporary file path, which we
+    // summarilly ignore and open /dev/null instead. The file
+    // specified this path doesn't exist. A bit of a hack.
+    assert!(!output_path.exists());
+
     drop(helper);
     assert!(!output_path.exists());
 }
