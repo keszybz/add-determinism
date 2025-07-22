@@ -386,6 +386,15 @@ pub fn process_file_or_dir(
     stats
 }
 
+fn unwrap_os_string(filename: &OsStr) -> Result<&str> {
+    match filename.to_str() {
+        Some(s) => Ok(s),
+        None => {
+            bail!("Invalid file name {:?}", filename);
+        }
+    }
+}
+
 pub struct InputOutputHelper<'a> {
     pub input_path: &'a Path,
     pub input_metadata: Metadata,
@@ -409,15 +418,6 @@ impl Drop for InputOutputHelper<'_> {
                     }
                 }
             }
-        }
-    }
-}
-
-fn unwrap_os_string(filename: &OsStr) -> Result<&str> {
-    match filename.to_str() {
-        Some(s) => Ok(s),
-        None => {
-            bail!("Invalid file name {:?}", filename);
         }
     }
 }
