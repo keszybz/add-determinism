@@ -9,7 +9,7 @@ use anyhow::{anyhow, bail, Result};
 use log::debug;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 
 fn brp_check(config: &config::Config, build_root: Option<String>) -> Result<()> {
     // env::current_exe() does readlink("/proc/self/exe"), which returns
@@ -53,7 +53,7 @@ fn main() -> Result<()> {
         None => { return Ok(()); }
         Some(some) => some
     };
-    let config = Rc::new(config);
+    let config = Arc::new(config);
 
     if config.print {
         return handlers::do_print(&config);
@@ -63,16 +63,11 @@ fn main() -> Result<()> {
 
     let stats;
 
-    if let Some(socket) = config.job_socket {
-        debug!("Running as worker on job socket {socket}");
-        return multiprocess::do_worker_work(&config);
-
-    } else if let Some(jobs) = config.jobs {
-        debug!("Running as controller with {jobs} workers");
+    if let Some(jobs) = config.jobs {
+        debug!("Running with {jobs} worker threads");
         stats = multiprocess::Controller::do_work(&config)?;
-
     } else {
-        // We're not the controller
+        debug!("Running single-threaded");
         stats = handlers::do_normal_work(&config)?;
     }
 

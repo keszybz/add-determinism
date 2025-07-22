@@ -165,6 +165,7 @@ exclude = [
 anyhow = "1.0.12"
 chrono = "0.4.35"
 clap = { version = "4.4.18", features = ["derive"] }
+crossbeam-channel = "0.5.15"
 indoc = "2.0.4"
 itertools = "0.13.0"
 log = { version = "0.4", features = ["std"] }
@@ -173,8 +174,7 @@ num-bigint-dig = "0.8.4"
 num-integer = "0.1.46"
 num-traits = "0.2.19"
 regex = { version = "1.10.0", default-features = false, features = ["std", "perf", "unicode-case"] }
-serde = { version = "1.0.203", features = ["derive"] }
-serde_cbor = "0.11"
+rlimit = "0.10.2"
 tempfile = "3.20"
 thiserror = "1.0.61"
 time = "0.3.34"

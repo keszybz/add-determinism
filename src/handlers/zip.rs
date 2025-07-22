@@ -5,7 +5,7 @@ use log::{debug, warn};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 use time;
 
 use crate::handlers::InputOutputHelper;
@@ -19,13 +19,15 @@ pub struct Zip {
     // separate handlers which can be enabled independently.
     extension: &'static str,
 
-    config: Rc<config::Config>,
+    config: Arc<config::Config>,
     unix_epoch: Option<time::OffsetDateTime>,
     dos_epoch: Option<zip::DateTime>,
 }
 
 impl Zip {
-    fn boxed(config: &Rc<config::Config>, extension: &'static str) -> Box<dyn super::Processor> {
+    fn boxed(config: &Arc<config::Config>, extension: &'static str)
+             -> Box<dyn super::Processor + Send + Sync>
+    {
         Box::new(Self {
             extension,
             config: config.clone(),
@@ -34,11 +36,11 @@ impl Zip {
         })
     }
 
-    pub fn boxed_zip(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed_zip(config: &Arc<config::Config>) -> Box<dyn super::Processor + Send + Sync> {
         Self::boxed(config, "zip")
     }
 
-    pub fn boxed_jar(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed_jar(config: &Arc<config::Config>) -> Box<dyn super::Processor + Send + Sync> {
         Self::boxed(config, "jar")
     }
 }

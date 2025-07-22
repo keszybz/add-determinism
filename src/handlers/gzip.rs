@@ -5,7 +5,7 @@ use log::{debug, info};
 use std::io;
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::handlers::InputOutputHelper;
 use crate::config;
@@ -15,12 +15,12 @@ const GZIP_MAGIC: &[u8] = &[0x1F, 0x8B];
 // Based on https://www.ietf.org/rfc/rfc1952.txt.
 
 pub struct Gzip {
-    config: Rc<config::Config>,
+    config: Arc<config::Config>,
     unix_epoch: Option<u32>,
 }
 
 impl Gzip {
-    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Arc<config::Config>) -> Box<dyn super::Processor + Send + Sync> {
         Box::new(Self {
             config: config.clone(),
             unix_epoch: None,
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_filter_html() {
-        let cfg = Rc::new(config::Config::empty(1704106800, false));
+        let cfg = Arc::new(config::Config::empty(1704106800, false));
         let h = Gzip::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/page.gz")).unwrap());

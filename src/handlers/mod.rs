@@ -8,7 +8,6 @@ pub mod zip;
 
 use anyhow::{bail, Context, Result};
 use log::{log, debug, info, warn, Level};
-use serde::{Serialize, Deserialize};
 use std::ascii::escape_default;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -19,7 +18,7 @@ use std::io::{self, Seek};
 use std::os::unix::fs as unix_fs;
 use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
@@ -109,7 +108,7 @@ pub trait Processor {
     fn process(&self, path: &Path) -> Result<ProcessResult>;
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Stats {
     /// Count of directories that were scanned. This includes both
     /// command-line arguments and subdirectories found in recursive
@@ -180,7 +179,7 @@ impl Stats {
     }
 }
 
-pub type HandlerBoxed = fn(&Rc<config::Config>) -> Box<dyn Processor>;
+pub type HandlerBoxed = fn(&Arc<config::Config>) -> Box<dyn Processor + Send + Sync>;
 
 pub const HANDLERS: &[(&str, bool, HandlerBoxed)] = &[
     ("ar",             true,  ar::Ar::boxed           ),
@@ -198,8 +197,8 @@ pub fn handler_names() -> Vec<&'static str> {
         .collect()
 }
 
-pub fn make_handlers(config: &Rc<config::Config>) -> Result<Vec<Box<dyn Processor>>> {
-    let mut handlers: Vec<Box<dyn Processor>> = vec![];
+pub fn make_handlers(config: &Arc<config::Config>) -> Result<Vec<Box<dyn Processor + Send + Sync>>> {
+    let mut handlers: Vec<Box<dyn Processor + Send + Sync>> = vec![];
 
     for (name, _, func) in HANDLERS {
         if config.handler_names.contains(name) {
@@ -226,7 +225,7 @@ pub fn inodes_seen() -> HashMap<u64, u8> {
     HashMap::new()
 }
 
-pub fn do_print(config: &Rc<config::Config>) -> Result<()> {
+pub fn do_print(config: &Arc<config::Config>) -> Result<()> {
     let handler = pyc::Pyc::new(config);
     let mut w = String::new();
 
@@ -242,7 +241,7 @@ pub fn do_print(config: &Rc<config::Config>) -> Result<()> {
     Ok(())
 }
 
-pub fn do_normal_work(config: &Rc<config::Config>) -> Result<Stats> {
+pub fn do_normal_work(config: &Arc<config::Config>) -> Result<Stats> {
     let handlers = make_handlers(config)?;
     let mut inodes_seen = inodes_seen();
     let mut total = Stats::new();
@@ -258,7 +257,7 @@ pub fn do_normal_work(config: &Rc<config::Config>) -> Result<Stats> {
 pub type ProcessWrapper<'a> = Option<&'a dyn Fn(u8, &Path) -> Result<()>>;
 
 fn process_file(
-    handlers: &[Box<dyn Processor>],
+    handlers: &[Box<dyn Processor + Send + Sync>],
     already_seen: &mut u8,
     input_path: &Path,
     process_wrapper: ProcessWrapper,
@@ -307,7 +306,7 @@ fn process_file(
 }
 
 fn process_entry(
-    handlers: &[Box<dyn Processor>],
+    handlers: &[Box<dyn Processor + Send + Sync>],
     inodes_seen: &mut HashMap<u64, u8>,
     process_wrapper: ProcessWrapper,
     stats: &mut Stats,
@@ -360,7 +359,7 @@ fn process_entry(
 }
 
 pub fn process_file_or_dir(
-    handlers: &[Box<dyn Processor>],
+    handlers: &[Box<dyn Processor + Send + Sync>],
     inodes_seen: &mut HashMap<u64, u8>,
     input_path: &Path,
     process_wrapper: ProcessWrapper,
