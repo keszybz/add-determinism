@@ -19,6 +19,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
+use std::sync::Arc;
 use std::time;
 
 use num_bigint_dig::{BigInt, ToBigInt};
@@ -1717,15 +1718,15 @@ impl PycWriter {
 
 
 pub struct Pyc {
-    config: Rc<config::Config>,
+    config: Arc<config::Config>,
 }
 
 impl Pyc {
-    pub fn new(config: &Rc<config::Config>) -> Self {
+    pub fn new(config: &Arc<config::Config>) -> Self {
         Self { config: config.clone() }
     }
 
-    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Arc<config::Config>) -> Box<dyn super::Processor + Send + Sync> {
         Box::new(Self::new(config))
     }
 }
@@ -1784,11 +1785,11 @@ impl Pyc {
 }
 
 pub struct PycZeroMtime {
-    config: Rc<config::Config>,
+    config: Arc<config::Config>,
 }
 
 impl PycZeroMtime {
-    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Arc<config::Config>) -> Box<dyn super::Processor + Send + Sync> {
         Box::new(Self { config: config.clone() })
     }
 

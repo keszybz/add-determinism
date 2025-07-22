@@ -4,10 +4,8 @@ use anyhow::{anyhow, Result};
 use chrono::{TimeZone, Utc};
 use clap::Parser;
 use log::{debug, info, log, warn, Level, LevelFilter};
-use std::env;
-use std::os::fd::RawFd;
 use std::path::PathBuf;
-use std::thread;
+use std::{env, thread};
 use std::time;
 
 use crate::handlers;
@@ -45,26 +43,8 @@ struct Options {
     #[arg(short, long,
           conflicts_with = "brp",
           conflicts_with = "check",
-          conflicts_with = "job_socket",
-          conflicts_with = "result_socket",
           conflicts_with = "jobs")]
     pub print: bool,
-
-    /// Read paths to process from this socket.
-    /// When used, an explicit list of handlers must be given.
-    #[arg(long,
-          hide = true,
-          conflicts_with = "inputs",
-          conflicts_with = "jobs",
-          requires = "handlers")]
-    pub job_socket: Option<RawFd>,
-
-    /// Write results of processing to this socket.
-    /// When used, an explicit list of handlers must be given.
-    #[arg(long,
-          hide = true,
-          requires = "job_socket")]
-    pub result_socket: Option<RawFd>,
 
     /// Use N worker processes
     #[arg(short = 'j',
@@ -77,10 +57,7 @@ struct Options {
 pub struct Config {
     pub inputs: Vec<PathBuf>,
     pub brp: bool,
-    pub verbose: bool,
     pub print: bool,
-    pub job_socket: Option<RawFd>,
-    pub result_socket: Option<RawFd>,
     pub check: bool,
     pub ignore_extension: bool,
     pub jobs: Option<u32>,
@@ -156,16 +133,14 @@ impl Config {
         let log_level = if options.verbose { LevelFilter::Debug } else { LevelFilter::Info };
         // Prefix logs with [pid] if we have multiple workers and -v was used,
         // which means that we expect output from various workers.
-        let show_pid = options.verbose && (
-            options.jobs.is_some() || options.job_socket.is_some()
-        );
+        let show_pid = options.verbose && options.jobs.is_some();
         simplelog::init(log_level, show_pid)?;
 
         let (handler_names, strict_handlers) = requested_handlers(&handlers)?;
 
         // positional args
 
-        if options.job_socket.is_none() && options.inputs.is_empty() && !options.brp {
+        if options.inputs.is_empty() && !options.brp {
             info!("No arguments specified, nothing to do. 😎");
         }
 
@@ -207,10 +182,7 @@ impl Config {
         Ok(Some(Self {
             inputs: options.inputs,
             brp: options.brp,
-            verbose: options.verbose,
             print: options.print,
-            job_socket: options.job_socket,
-            result_socket: options.result_socket,
             check: options.check,
             ignore_extension: options.ignore_extension,
             jobs,
@@ -226,10 +198,7 @@ impl Config {
         Self {
             inputs: vec![],
             brp: false,
-            verbose: false,
             print: false,
-            job_socket: None,
-            result_socket: None,
             check,
             ignore_extension: false,
             jobs: None,

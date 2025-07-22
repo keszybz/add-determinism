@@ -5,7 +5,7 @@ use log::debug;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, Write, ErrorKind};
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::handlers::InputOutputHelper;
 use crate::config;
@@ -16,11 +16,11 @@ const FILE_HEADER_LENGTH: usize = 60;
 const FILE_HEADER_MAGIC: &[u8] = &[0o140, 0o012];
 
 pub struct Ar {
-    config: Rc<config::Config>,
+    config: Arc<config::Config>,
 }
 
 impl Ar {
-    pub fn boxed(config: &Rc<config::Config>) -> Box<dyn super::Processor> {
+    pub fn boxed(config: &Arc<config::Config>) -> Box<dyn super::Processor + Send + Sync> {
         Box::new(Self { config: config.clone() })
     }
 }
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn filter_a() {
-        let cfg = Rc::new(config::Config::empty(0, true));
+        let cfg = Arc::new(config::Config::empty(0, true));
         let h = Ar::boxed(&cfg);
 
         assert!( h.filter(Path::new("/some/path/libfoobar.a")).unwrap());

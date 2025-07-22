@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use std::fs;
-use std::rc::Rc;
+use std::sync::Arc;
 #[cfg(target_os = "linux")]
 use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
@@ -35,7 +35,7 @@ fn test_libempty() {
 fn test_testrelro() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(config::Config::empty(111, false));
+    let cfg = Arc::new(config::Config::empty(111, false));
     let ar = ar::Ar::boxed(&cfg);
 
     assert!(ar.filter(&*input).unwrap());
@@ -55,7 +55,7 @@ fn test_testrelro() {
 fn test_testrelro_check() {
     let (_dir, input) = prepare_dir("tests/cases/testrelro.a").unwrap();
 
-    let cfg = Rc::new(config::Config::empty(111, true));
+    let cfg = Arc::new(config::Config::empty(111, true));
     let ar = ar::Ar::boxed(&cfg);
 
     assert!(ar.filter(&*input).unwrap());
