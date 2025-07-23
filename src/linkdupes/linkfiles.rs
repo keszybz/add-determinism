@@ -384,7 +384,11 @@ fn link_files(
     // anyway, so we can do that with very little overhead.
 
     for (n, finfo) in files.iter().enumerate() {
-        if let FileState::None = *finfo.file_state.borrow() { } else {
+        if matches!(*finfo.file_state.borrow(), FileState::Error) {
+            stats.errors += 1;
+        }
+
+        if !matches!(*finfo.file_state.borrow(), FileState::None) {
             stats.files_read += 1;
         }
 
