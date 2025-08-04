@@ -13,9 +13,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use add_determinism::config;
-use add_determinism::handlers;
-use super::{init, prepare_dir};
+use add_determinism::add_det::{config, handlers};
+use crate::common::{init, prepare_dir};
 
 fn make_handler(
     source_date_epoch: i64,

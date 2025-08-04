@@ -8,8 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use time;
 
-use crate::handlers::InputOutputHelper;
-use crate::config;
+use super::{config, InputOutputHelper};
 
 const FILE_HEADER_MAGIC: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
 const CENTRAL_HEADER_FILE_MAGIC: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];

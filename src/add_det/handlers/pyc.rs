@@ -27,8 +27,7 @@ use num_integer::Integer;
 use num_traits::cast::ToPrimitive;
 use num_traits::{Signed, Zero};
 
-use crate::config;
-use crate::handlers::{InputOutputHelper, unwrap_os_string};
+use super::{config, InputOutputHelper, unwrap_os_string};
 
 const PYC_MAGIC: &[u8] = &[0x0D, 0x0A];
 const PYLONG_MARSHAL_SHIFT: i32 = 15;

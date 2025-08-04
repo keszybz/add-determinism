@@ -2,10 +2,11 @@
 
 use std::os::linux::fs::MetadataExt;
 
-use add_determinism::handlers;
-use add_determinism::handlers::gzip;
+use add_determinism::add_det::handlers;
+use add_determinism::add_det::handlers::gzip;
 
-use super::{prepare_dir, make_handler};
+use crate::common::prepare_dir;
+use super::make_handler;
 
 #[test]
 fn test_empty() {

@@ -7,8 +7,7 @@ use std::io::{BufReader, BufWriter, Read, Seek, Write, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::handlers::InputOutputHelper;
-use crate::config;
+use super::{config, InputOutputHelper};
 
 const MAGIC: &[u8] = b"!<arch>\n";
 

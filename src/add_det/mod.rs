@@ -1,4 +1,4 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-mod common;
-mod handlers;
+pub mod config;
+pub mod handlers;

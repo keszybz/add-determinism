@@ -27,7 +27,7 @@ use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
 use std::os::macos::fs::MetadataExt as _;
 
-use crate::config;
+use super::config;
 
 #[derive(Error, Debug)]
 pub enum Error {

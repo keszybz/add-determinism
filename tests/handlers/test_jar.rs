@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use add_determinism::handlers::zip;
+use add_determinism::add_det::handlers::zip;
 
 use super::{make_handler, test_corpus_file};
 
