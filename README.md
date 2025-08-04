@@ -4,7 +4,7 @@
     <img src="https://repology.org/badge/vertical-allrepos/add-determinism.svg" alt="Packaging status" align="right">
 </a>
 
-This crate provides the program `add-determinism` that takes one or more paths as arguments,
+This crate provides the program `add-det` that takes one or more paths as arguments,
 and will recursively process those paths,
 attempting to run the handlers on any files with extensions that match.
 (Each argument can be either a single file or a directory to be processed recursively.)
@@ -25,7 +25,7 @@ making it easier to create reproducible (package) builds.
 ### Standalone
 
 ```console
-$ add-determinism /path/to/file /path/to/directory
+$ add-det /path/to/file /path/to/directory
 ```
 Note that the program works in-place, replacing input files with the rewritten versions (if any modifications are made).
 
@@ -42,7 +42,7 @@ When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be de
 All arguments must be below `$RPM_BUILD_ROOT`.
 This option is intended to be used in rpm macros that define post-install steps.
 See [redhat-rpm-config pull request #293](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/293)
-for a pull request that added a call to `add-determinism` in `%__os_install_post`.
+for a pull request that added a call to `add-det` in `%__os_install_post`.
 
 ### Verification instead of modification
 
@@ -133,7 +133,7 @@ To do this nicely we would need to disassemble the code.
 Contributions welcome!
 
 ```console
-$ add-determinism -p /path/to/pyc-file
+$ add-det -p /path/to/pyc-file
 Code "<module>" 🚩204/(ref to 204)"<module>" 🚩0
   (ref to 22)"/usr/lib/python3.12/site-packages/elftools/construct/adapters.py":1
   argcount=0 posonlyargcount=0 kwonlyargcount=0 stacksize=5 flags=0

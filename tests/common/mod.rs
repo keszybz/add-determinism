@@ -36,7 +36,7 @@ fn add_det_bin() -> PathBuf {
     if root.ends_with("deps") {
         root.pop();
     }
-    root.join("add-determinism")
+    root.join("add-det")
 }
 
 pub fn invoke<I, S>(args: I) -> process::Output
@@ -49,5 +49,5 @@ where
         .env_remove("SOURCE_DATE_EPOCH")  // make sure that $SOURCE_DATE_EPOCH is
                                           // not inherited from the environment
         .output()
-        .expect("failed to execute add-determinism")
+        .expect("failed to execute add-det")
 }
