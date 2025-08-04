@@ -194,3 +194,7 @@ glob = "0.3.1"
 [[bin]]
 name = "add-det"
 path = "src/add_det/main.rs"
+
+[[bin]]
+name = "linkdupes"
+path = "src/linkdupes/main.rs"
