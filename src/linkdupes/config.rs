@@ -8,8 +8,7 @@ use std::ops::Add;
 use std::path::PathBuf;
 use std::time;
 
-use add_determinism::setup;
-use add_determinism::simplelog;
+use crate::{setup, simplelog};
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]

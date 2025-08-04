@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+#![allow(dead_code)]
+
 use add_determinism::simplelog;
 
 use anyhow::Result;
@@ -17,6 +19,12 @@ pub fn init() {
     INIT.call_once(|| {
         simplelog::init(log::LevelFilter::Debug, true).unwrap();
     })
+}
+
+pub fn empty_dir() -> Result<Box<TempDir>> {
+    init();
+
+    Ok(Box::new(TempDir::new()?))
 }
 
 pub fn prepare_dir(path: &str) -> Result<(Box<TempDir>, Box<PathBuf>)> {

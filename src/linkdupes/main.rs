@@ -5,10 +5,10 @@ mod linkfiles;
 
 use anyhow::Result;
 
-use crate::config::Config;
+use add_determinism::{setup, simplelog};
 
 fn main() -> Result<()> {
-    let config = Config::make()?;
+    let config = config::Config::make()?;
 
     rlimit::increase_nofile_limit(u64::MAX)?;
 

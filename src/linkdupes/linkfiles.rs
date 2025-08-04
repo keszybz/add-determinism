@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::cell::RefCell;
 use std::fs;
 
-use crate::config::Config;
+use super::config::Config;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Stats {
