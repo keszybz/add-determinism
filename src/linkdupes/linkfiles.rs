@@ -392,6 +392,7 @@ fn link_files(
             stats.files_read += 1;
         }
 
+        #[allow(clippy::unnecessary_unwrap)]
         if linkto.is_some() &&
            FileInfo::compare(&files[linkto.unwrap()], finfo, config) == Ordering::Equal {
 
