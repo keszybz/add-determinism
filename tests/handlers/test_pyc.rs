@@ -9,10 +9,11 @@ use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
 use std::os::macos::fs::MetadataExt as _;
 
-use add_determinism::handlers;
-use add_determinism::handlers::pyc;
+use add_determinism::add_det::handlers;
+use add_determinism::add_det::handlers::pyc;
 
-use super::{prepare_dir, make_handler, test_corpus_file};
+use crate::common::prepare_dir;
+use super::{make_handler, test_corpus_file};
 
 #[test]
 fn test_pyc_header() {

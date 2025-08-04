@@ -6,10 +6,11 @@ use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
 use std::os::macos::fs::MetadataExt as _;
 
-use add_determinism::handlers;
-use add_determinism::handlers::javadoc;
+use add_determinism::add_det::handlers;
+use add_determinism::add_det::handlers::javadoc;
 
-use super::{prepare_dir, make_handler};
+use crate::common::prepare_dir;
+use super::make_handler;
 
 #[test]
 fn test_javadoc_example() {

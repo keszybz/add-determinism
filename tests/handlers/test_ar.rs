@@ -7,11 +7,12 @@ use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
 use std::os::macos::fs::MetadataExt as _;
 
-use add_determinism::config;
-use add_determinism::handlers;
-use add_determinism::handlers::ar;
+use add_determinism::add_det::config;
+use add_determinism::add_det::handlers;
+use add_determinism::add_det::handlers::ar;
 
-use super::{prepare_dir, make_handler, test_corpus_file};
+use crate::common::prepare_dir;
+use super::{make_handler, test_corpus_file};
 
 #[test]
 fn test_libempty() {

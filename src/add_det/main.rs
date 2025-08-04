@@ -3,13 +3,13 @@
 mod config;
 mod handlers;
 mod multiprocess;
-mod setup;
-mod simplelog;
 
 use anyhow::{bail, Result};
 use log::debug;
 use std::env;
 use std::sync::Arc;
+
+use add_determinism::{setup, simplelog};
 
 fn main() -> Result<()> {
     let config = match config::Config::make()? {

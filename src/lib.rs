@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-pub mod config;
-pub mod handlers;
+pub mod add_det;
 pub mod simplelog;
 pub mod setup;

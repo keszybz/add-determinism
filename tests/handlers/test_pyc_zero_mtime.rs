@@ -7,11 +7,10 @@ use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
 use std::os::macos::fs::MetadataExt as _;
 
-use add_determinism::handlers;
-use add_determinism::handlers::pyc;
+use add_determinism::add_det::handlers;
 
-use crate::test_invocation::invoke;
-use super::{prepare_dir, make_handler};
+use crate::common::{invoke, prepare_dir};
+use super::make_handler;
 
 #[test]
 fn test_adapters() {
@@ -26,7 +25,7 @@ fn test_adapters() {
         .open(dir.path().join("adapters.py"))
         .unwrap();
 
-    let pyc = make_handler(111, false, pyc::PycZeroMtime::boxed).unwrap();
+    let pyc = make_handler(111, false, handlers::pyc::PycZeroMtime::boxed).unwrap();
 
     assert!(pyc.filter(&*input).unwrap());
 

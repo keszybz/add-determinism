@@ -190,3 +190,7 @@ panic = "abort"
 [build-dependencies]
 anyhow = "1.0.12"
 glob = "0.3.1"
+
+[[bin]]
+name = "add-determinism"
+path = "src/add_det/main.rs"

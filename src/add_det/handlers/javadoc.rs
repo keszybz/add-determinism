@@ -8,8 +8,7 @@ use std::io::{BufRead, BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::handlers::InputOutputHelper;
-use crate::config;
+use super::{config, InputOutputHelper};
 
 const HEADER_LINES_TO_CHECK: i32 = 15;
 

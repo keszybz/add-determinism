@@ -7,8 +7,7 @@ use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::handlers::InputOutputHelper;
-use crate::config;
+use super::{config, InputOutputHelper};
 
 const GZIP_MAGIC: &[u8] = &[0x1F, 0x8B];
 

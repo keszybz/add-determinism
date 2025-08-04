@@ -6,9 +6,9 @@ use log::{debug, info, LevelFilter};
 use std::path::PathBuf;
 use std::thread;
 
-use crate::handlers;
 use crate::setup;
 use crate::simplelog;
+use super::handlers;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
