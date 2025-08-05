@@ -185,7 +185,7 @@ files might or might not be considered identical.
 #### Standalone usage
 
 ```console
-$ add-det /path/to/file /path/to/directory
+$ linkdupes /path/to/file /path/to/directory
 ```
 Note that the program works in-place, replacing input files with the rewritten versions (if any modifications are made).
 
