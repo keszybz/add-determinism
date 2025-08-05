@@ -1,12 +1,16 @@
-# Build postprocessor to reset metadata fields for build reproducibility
+# Build postprocessors to reset metadata fields and hardlink files for build reproducibility
 
 <a href="https://repology.org/project/add-determinism/versions">
     <img src="https://repology.org/badge/vertical-allrepos/add-determinism.svg" alt="Packaging status" align="right">
 </a>
 
-This crate provides the program `add-det` that takes one or more paths as arguments,
-and will recursively process those paths,
-attempting to run the handlers on any files with extensions that match.
+This crate provides two related programs for package build postprocessing.
+
+## `add-det`
+
+`add-det` takes one or more paths as arguments,
+and will recursively process normal files in those paths,
+attempting to run a set of type-specific handlers on any files with extensions that match.
 (Each argument can be either a single file or a directory to be processed recursively.)
 
 For each processed file, a temporary file is opened,
@@ -20,9 +24,9 @@ but no modifications are made and the program returns success.
 The purpose of this tool is to eliminate common sources of non-determinism in builds,
 making it easier to create reproducible (package) builds.
 
-## Usage
+### Usage
 
-### Standalone
+#### Standalone usage
 
 ```console
 $ add-det /path/to/file /path/to/directory
@@ -35,8 +39,9 @@ Some useful options:
 * `-j [N]` — use `N` workers (or as many as CPUs, if `N` is not given)
 * `--handler list|HANDLER|-HANDLER` — constrain the list of handlers. Takes a comma-separated list of names, either a list of "positive" names, in which case only listed handlers will be used, or a list of "negative" names, each prefixed by minus, in which case the listed handlers will not be used. By default, handlers that cannot be initialized are skipped with a warning. If a "positive" list is given, failure to initialize a handler will cause an error. The special value `list` can be used to list known handlers.
 * `--brp` — enable "build root program" mode, see below.
+* `-V`, `--version` — print program version
 
-### In an rpm build environment
+#### In an rpm build environment
 
 When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be defined and not empty.
 All arguments must be below `$RPM_BUILD_ROOT`.
@@ -44,22 +49,22 @@ This option is intended to be used in rpm macros that define post-install steps.
 See [redhat-rpm-config pull request #293](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/293)
 for a pull request that added a call to `add-det` in `%__os_install_post`.
 
-### Verification instead of modification
+#### Verification instead of modification
 
 When invoked with `--check`, the tool processes all files,
 but does not actually save any modifications.
 Instead, it'll fail if any files would have been modified.
 It also returns an error if any files cannot be read.
 
-## Processors
+### Processors
 
-### `ar`
+#### `ar`
 
 Accepts `*.a`.
 
 Resets the embedded modification times to `$SOURCE_DATE_EPOCH` and owner:group to 0:0.
 
-### `jar`
+#### `jar`
 
 Accepts `*.jar`.
 
@@ -68,7 +73,7 @@ The modification times of archive entries are clamped to `$SOURCE_DATE_EPOCH`.
 Extra metadata, i.e. primarily timestamps in UNIX format and DOS permissions,
 is stripped (also because the crate does not support them).
 
-### `javadoc`
+#### `javadoc`
 
 Accepts `*.html`.
 
@@ -89,7 +94,7 @@ When files that were generated during the build are compressed with `gzip`,
 the timestamp is embedded.
 We clamp it to restore build reproducibility.
 
-### `pyc`
+#### `pyc`
 
 Accepts `*.pyc`.
 
@@ -98,7 +103,7 @@ and cleans up unused "flag references".
 It is a Rust reimplementation of
 the [MarshalParser Python module](https://github.com/fedora-python/marshalparser).
 
-### `pyc-zero-mtime`
+#### `pyc-zero-mtime`
 
 Accepts `*.pyc`.
 
@@ -112,7 +117,7 @@ and the filesystem metadata of the `.py` file.
 This handler is not enabled by default and must be explicitly requested
 via `--handler pyc-zero-mtime`.
 
-### `zip`
+#### `zip`
 
 Accepts `*.zip`.
 
@@ -121,7 +126,7 @@ The modification times of archive entries is clamped `$SOURCE_DATE_EPOCH`.
 Extra metadata, i.e. primarily timestamps in UNIX format and DOS permissions,
 is stripped (also because the crate does not support them).
 
-## Printing of `.pyc` files
+### Printing of `.pyc` files
 
 When invoked with `-p`, this tool will print the contents of a `.pyc` file.
 Special effort is made to show flags on objects and references to them.
@@ -157,6 +162,46 @@ Code "<module>" 🚩204/(ref to 204)"<module>" 🚩0
     (ref to 14)"BitIntegerError",
 ...
 ```
+
+## `linkdupes`
+
+🚧🚧🚧 This program is currently experimental. 🚧🚧🚧
+
+`linkdupes` takes one or more paths as arguments,
+and will recursively process normal files in those paths,
+looking for files that have the same contents.
+Files with same contents, ownership, and mode will be hardlinked.
+
+This program is similar to programs that hardlink files,
+but takes `$SOURCE_DATE_EPOCH` into account:
+file modification timestamps are clamped to `$SOURCE_DATE_EPOCH`.
+Without this clamping,
+hardlinking of files produced during a build is not stable,
+because depending on the machine speed and file system timestamp granularity,
+files might or might not be considered identical.
+
+### Usage
+
+#### Standalone usage
+
+```console
+$ add-det /path/to/file /path/to/directory
+```
+Note that the program works in-place, replacing input files with the rewritten versions (if any modifications are made).
+
+Some useful options:
+
+* `-v`… — enable debug output
+* `-n`, `--dry-run` — just print what would be done
+* `--brp` — enable "build root program" mode, see below
+* `-V`, `--version` — print program version
+* `--ignore-mtimes`, `--ignore-mode`, `--ignore-owner` — ignore modification timestamps, access mode, or owner and group when comparing files.
+
+#### In an rpm build environment
+
+When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be defined and not empty.
+All arguments must be below `$RPM_BUILD_ROOT`.
+This option is intended to be used in rpm macros that define post-install steps.
 
 ## Notes
 
