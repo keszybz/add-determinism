@@ -1,6 +1,6 @@
 ### BRP scripts (and related macros) provided by the add-determinism package
 
-# The path to the program.
+# The path to the add-det program.
 # If unset, the program will not be called.
 %__brp_add_determinism /usr/bin/add-det
 
@@ -15,4 +15,20 @@
 
 %__os_install_post_build_reproducibility \
     %{?__brp_add_determinism:%{__brp_add_determinism} --brp %{?_smp_build_ncpus:-j%{_smp_build_ncpus}} %{?add_determinism_options} %{?add_determinism_paths}} \
+%{nil}
+
+# The path to the linkdupes program.
+# If unset, the program will not be called.
+%__brp_linkdupes /usr/bin/linkdupes
+
+# Extra options to be passed to the program.
+# For example, '-v' can be added to increase verbosity.
+%linkdupes_options %{nil}
+
+# Directories (or files) to process.
+# By default, all installed files under /usr are processed.
+%linkdupes_paths %{buildroot}%{_usr}
+
+%__os_install_post_hardlink \
+    %{?__brp_linkdupes:%{__brp_linkdupes} --brp %{?linkdupes_options} %{?linkdupes_paths}} \
 %{nil}
