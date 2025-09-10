@@ -175,6 +175,7 @@ num-integer = "0.1.46"
 num-traits = "0.2.19"
 regex = { version = "1.10.0", default-features = false, features = ["std", "perf", "unicode-case"] }
 rlimit = "0.10.2"
+selinux = "0.4.4"
 tempfile = "3.20"
 thiserror = "1.0.61"
 time = "0.3.34"
