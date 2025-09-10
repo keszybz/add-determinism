@@ -20,8 +20,16 @@ pub fn lookup_context(
         path
     };
 
-    let context = labels.look_up_by_path(adjusted, None)?;
-    let label = context.to_c_string()?.unwrap().to_str()?.to_owned();
+    let label = match labels.look_up_by_path(adjusted, None) {
+        Err(e) => {
+            debug!("{}: {}", adjusted.display(), e);
+            // FIXME: figure out if the error is NotFound
+            "<<none>>".to_owned()
+        }
+        Ok(context) => {
+            context.to_c_string()?.unwrap().to_str()?.to_owned()
+        }
+    };
 
     debug!("Context: {} -> {}", path.display(), label);
 
