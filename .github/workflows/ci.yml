@@ -26,6 +26,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      - name: Install libselinux
+        run: |
+          sudo apt-get install -y libselinux1-dev
       - name: Install Rust
         run: |
           rm -f ~/.cargo/bin/*fmt ~/.cargo/bin/rust-analyzer
@@ -72,6 +75,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      - name: Install libselinux
+        run: |
+          sudo apt-get install -y libselinux1-dev
       - name: Install Rust
         run: |
           rm -f ~/.cargo/bin/*fmt ~/.cargo/bin/rust-analyzer
