@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::fs;
 
 use super::config::Config;
+use super::fcontexts;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Stats {
@@ -66,6 +67,7 @@ enum FileState {
 struct FileInfo {
     path: PathBuf,
     metadata: fs::Metadata,
+    selinux_context: RefCell<Option<String>>,
     hashes: RefCell<Vec<u64>>,
     file_state: RefCell<FileState>,
 }
@@ -75,9 +77,26 @@ impl FileInfo {
         FileInfo {
             path,
             metadata,
+            selinux_context: RefCell::new(None),
             hashes: RefCell::new(vec![]),
             file_state: RefCell::new(FileState::None),
         }
+    }
+
+    fn set_selinux_context(
+        &self,
+        labels: &selinux::label::Labeler<selinux::label::back_end::File>,
+        root: Option<&Path>,
+    ) -> Result<()> {
+
+        let mut context = self.selinux_context.borrow_mut();
+
+        if context.is_none() {
+            let fc = fcontexts::lookup_context(labels, root, &self.path)?;
+            context.replace(fc);
+        }
+
+        Ok(())
     }
 
     fn compare(
@@ -150,6 +169,30 @@ impl FileInfo {
             partial = t1.cmp(&t2);
             if partial != Ordering::Equal {
                 trace!("Comparing {} and {} → mtime={:?}", self.path.display(), other.path.display(), partial);
+                return partial;
+            }
+        }
+
+        // Do SELinux context comparison.
+        // The labels are available iff the check wasn't turned off and files are found.
+        if let Some(labels) = config.selinux_labels.as_ref() {
+            if let Err(e) = self.set_selinux_context(labels, config.root.as_deref()) {
+                return FileInfo::file_error(ino_res, e, config);
+            }
+            if let Err(e) = other.set_selinux_context(labels, config.root.as_deref()) {
+                return FileInfo::file_error(ino_res, e, config);
+            }
+
+            let c1 = self.selinux_context.borrow();
+            let c2 = other.selinux_context.borrow();
+
+            partial = c1.cmp(&c2);
+            if partial != Ordering::Equal {
+                debug!("Comparing {} and {} → {} and {}, fcontext={:?}",
+                       self.path.display(), other.path.display(),
+                       c1.as_deref().unwrap_or("<<none>>"),
+                       c2.as_deref().unwrap_or("<<none>>"),
+                       partial);
                 return partial;
             }
         }
@@ -461,6 +504,7 @@ mod tests {
         let a = FileInfo {
             path: file1.path().to_path_buf(),
             metadata: fs::metadata(file1.path()).unwrap(),
+            selinux_context: RefCell::new(None),
             hashes: vec![1, 2, 3, 4].into(),
             file_state: FileState::Closed.into(),
         };
@@ -468,6 +512,7 @@ mod tests {
         let b = FileInfo {
             path: file2.path().to_path_buf(),
             metadata: fs::metadata(file2.path()).unwrap(),
+            selinux_context: RefCell::new(None),
             hashes: vec![1, 2, 3, 4].into(),
             file_state: FileState::Closed.into(),
         };
@@ -485,6 +530,7 @@ mod tests {
         let a_again = FileInfo {
             path: "/a/b/c".into(),
             metadata: a.metadata.clone(),
+            selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::None.into(),
         };
@@ -499,6 +545,7 @@ mod tests {
         let mut b_again = FileInfo {
             path: file2.path().to_path_buf(),
             metadata: fs::metadata(file2.path()).unwrap(),
+            selinux_context: RefCell::new(None),
             hashes: a.hashes.borrow().clone().into(),
             file_state: FileState::Closed.into(),
         };
@@ -533,6 +580,7 @@ mod tests {
         let a = FileInfo {
             path: "/dev".into(),
             metadata: fs::metadata("/dev").unwrap(),
+            selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::Closed.into(),
         };
@@ -540,11 +588,59 @@ mod tests {
         let b = FileInfo {
             path: "/proc".into(),
             metadata: fs::metadata("/proc").unwrap(),
+            selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::Closed.into(),
         };
 
         assert_ne!(a.compare(&b, &config), Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_selinux_contexts() {
+        let labels = match selinux::label::Labeler::new(&[], false) {
+            Err(e) => {
+                info!("Failed to initalize SELinux db: {}", e);
+                return;
+            }
+            Ok(v) => v,
+        };
+
+        let mut config = Config::empty();
+        config.selinux_labels.replace(labels);
+
+        let mut file1 = tempfile::NamedTempFile::new().unwrap();
+        let mut file2 = tempfile::NamedTempFile::new().unwrap();
+
+        file1.write(b"0").unwrap();
+        file2.write(b"0").unwrap();
+
+        let ts = file2.as_file().metadata().unwrap().modified().unwrap();
+        file1.as_file().set_modified(ts).unwrap();
+
+        let a = FileInfo {
+            path: file1.path().to_path_buf(),
+            metadata: fs::metadata(file1.path()).unwrap(),
+            selinux_context: RefCell::new(None),
+            hashes: vec![5, 6, 7].into(),
+            file_state: FileState::Closed.into(),
+        };
+
+        let b = FileInfo {
+            path: file2.path().to_path_buf(),
+            metadata: fs::metadata(file2.path()).unwrap(),
+            selinux_context: RefCell::new(None),
+            hashes: vec![5, 6, 7].into(),
+            file_state: FileState::Closed.into(),
+        };
+
+        assert_eq!(a.compare(&b, &config), Ordering::Equal);
+        a.selinux_context.borrow_mut().replace("aaa".to_owned());
+        assert_eq!(a.compare(&b, &config), Ordering::Greater);
+        b.selinux_context.borrow_mut().replace("bbb".to_owned());
+        assert_eq!(a.compare(&b, &config), Ordering::Less);
+        b.selinux_context.borrow_mut().replace("aaa".to_owned());
+        assert_eq!(a.compare(&b, &config), Ordering::Equal);
     }
 
     #[test]
@@ -564,6 +660,7 @@ mod tests {
         let a = FileInfo {
             path: file1.path().to_path_buf(),
             metadata: fs::metadata(file1.path()).unwrap(),
+            selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::None.into(),
         };
@@ -571,6 +668,7 @@ mod tests {
         let b = FileInfo {
             path: file2.path().to_path_buf(),
             metadata: fs::metadata(file2.path()).unwrap(),
+            selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::None.into(),
         };
@@ -604,6 +702,7 @@ mod tests {
             let a = FileInfo {
                 path: file1.path().to_path_buf(),
                 metadata: fs::metadata(file1.path()).unwrap(),
+                selinux_context: RefCell::new(None),
                 hashes: vec![].into(),
                 file_state: FileState::None.into(),
             };
@@ -611,6 +710,7 @@ mod tests {
             let b = FileInfo {
                 path: file2.path().to_path_buf(),
                 metadata: fs::metadata(file2.path()).unwrap(),
+                selinux_context: RefCell::new(None),
                 hashes: vec![].into(),
                 file_state: FileState::None.into(),
             };
