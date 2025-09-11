@@ -32,15 +32,13 @@ fn main() -> Result<()> {
         setup::brp_check(None, &config.inputs)?;
     }
 
-    let stats;
-
-    if let Some(jobs) = config.jobs {
+    let stats = if let Some(jobs) = config.jobs {
         debug!("Running with {jobs} worker threads");
-        stats = multiprocess::Controller::do_work(&config)?;
+        multiprocess::Controller::do_work(&config)?
     } else {
         debug!("Running single-threaded");
-        stats = handlers::do_normal_work(&config)?;
-    }
+        handlers::do_normal_work(&config)?
+    };
 
     stats.summarize();
 

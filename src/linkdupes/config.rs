@@ -40,9 +40,18 @@ struct Options {
     /// Link even if owner or group are different
     #[arg(long)]
     pub ignore_owner: bool,
+
+    /// Disable selinux context comparisons
+    #[arg(long)]
+    pub ignore_selinux_context: bool,
+
+    /// Print selinux contexts
+    #[arg(long)]
+    pub print_selinux_contexts: bool,
 }
 
 pub struct Config {
+    pub root: Option<PathBuf>,  // we need this to do selinux lookups
     pub inputs: Vec<PathBuf>,
     pub fatal_errors: bool,
     pub _verbose: u8,
@@ -51,10 +60,15 @@ pub struct Config {
     pub ignore_mode: bool,
     pub ignore_owner: bool,
     pub source_date_epoch: Option<time::SystemTime>,
+    pub print_selinux_contexts: bool,
+
+    pub selinux_labels: Option<selinux::label::Labeler<selinux::label::back_end::File>>,
 }
 
 impl Config {
     pub fn make() -> Result<Self> {
+        let mut root = None;
+
         let options = Options::parse();
 
         // log level
@@ -74,8 +88,14 @@ impl Config {
 
         // Extra checks in case --brp was specified
         if options.brp {
-            setup::brp_check(None, &options.inputs)?;
+            root = Some(setup::brp_check(None, &options.inputs)?);
         }
+
+        let selinux_labels = if options.ignore_selinux_context {
+            None
+        } else {
+            Some(selinux::label::Labeler::new(&[], false)?)
+        };
 
         // positional args
         if options.inputs.is_empty() && !options.brp {
@@ -83,6 +103,7 @@ impl Config {
         }
 
         Ok(Self {
+            root,
             inputs: options.inputs,
             fatal_errors: options.brp,
             _verbose: options.verbose,
@@ -91,6 +112,9 @@ impl Config {
             ignore_mode: options.ignore_mode,
             ignore_owner: options.ignore_owner,
             source_date_epoch,
+            print_selinux_contexts: options.print_selinux_contexts,
+
+            selinux_labels,
         })
     }
 
@@ -98,6 +122,7 @@ impl Config {
     // FIXME: should this be marked as #[cfg(test)]? But then the tests don't compile.
     pub const fn empty() -> Self {
         Self {
+            root: None,
             inputs: vec![],
             fatal_errors: false,
             _verbose: 0,
@@ -106,6 +131,9 @@ impl Config {
             ignore_mode: false,
             ignore_owner: false,
             source_date_epoch: None,
+            print_selinux_contexts: false,
+
+            selinux_labels: None,
         }
     }
 }

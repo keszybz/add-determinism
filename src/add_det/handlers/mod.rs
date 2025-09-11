@@ -167,10 +167,11 @@ impl Stats {
     }
 
     pub fn summarize(&self) {
-        info!("Scanned {} directories and {} files,
-               processed {} inodes,
-               {} modified ({} replaced + {} rewritten),
-               {} unsupported format, {} errors",
+        info!("Scanned {} directories and {} files,\n    \
+              processed {} inodes,\n    \
+              {} modified ({} replaced + {} rewritten),\n    \
+              {} unsupported format, {} errors\
+              ",
               self.directories, self.files,
               self.inodes_processed,
               self.inodes_replaced + self.inodes_rewritten,

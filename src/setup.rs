@@ -39,7 +39,7 @@ pub fn source_date_epoch() -> Result<Option<i64>> {
 pub fn brp_check(
     build_root: Option<String>,
     inputs: &Vec<PathBuf>,
-) -> Result<()> {
+) -> Result<PathBuf> {
 
     let build_root = build_root.map_or_else(
         || env::var("RPM_BUILD_ROOT")
@@ -65,7 +65,7 @@ pub fn brp_check(
         }
     }
 
-    Ok(())
+    Ok(build_root)
 }
 
 #[cfg(test)]
