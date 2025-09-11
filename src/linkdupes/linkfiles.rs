@@ -46,9 +46,10 @@ impl Stats {
 
     pub fn summarize(&self) {
         println!(
-            "Scanned {} directories and {} files,
-    considered {} files, read {} files, linked {} files, {} errors
-    sum of sizes of linked files: {} bytes",
+            "Scanned {} directories and {} files,\n    \
+            considered {} files, read {} files, linked {} files, {} errors\n    \
+            sum of sizes of linked files: {} bytes\
+            ",
             self.directories, self.files,
             self.candidate_files, self.files_read, self.files_linked, self.errors,
             self.bytes_linked);
