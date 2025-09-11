@@ -172,13 +172,25 @@ and will recursively process normal files in those paths,
 looking for files that have the same contents.
 Files with same contents, ownership, and mode will be hardlinked.
 
-This program is similar to programs that hardlink files,
+This program is similar to other programs that hardlink files,
 but takes `$SOURCE_DATE_EPOCH` into account:
 file modification timestamps are clamped to `$SOURCE_DATE_EPOCH`.
 Without this clamping,
 hardlinking of files produced during a build is not stable,
 because depending on the machine speed and file system timestamp granularity,
 files might or might not be considered identical.
+
+This program also takes into account SELinux file contexts.
+If files are otherwise identical (contents and metadata),
+the SELinux policy is queried for the context that would be assigned to those paths,
+and the files are only considered identical if those contexts match.
+Hardlinked files share the SELinux context,
+so this check prevents the context from being inadvertently changed.
+
+The default SELinux policy (configured in `/etc/selinux/config`)
+will be used.
+The policy files must be present.
+SELinux doesn't have to be active on the system.
 
 ### Usage
 
@@ -187,8 +199,6 @@ files might or might not be considered identical.
 ```console
 $ linkdupes /path/to/file /path/to/directory
 ```
-Note that the program works in-place, replacing input files with the rewritten versions (if any modifications are made).
-
 Some useful options:
 
 * `-v`… — enable debug output
