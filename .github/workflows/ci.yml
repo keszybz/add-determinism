@@ -37,12 +37,14 @@ jobs:
         run: |
           rustup toolchain install ${{ matrix.rust }}
           rustup default ${{ matrix.rust }}
-      - name: Build
+      - name: Build without selinux
         run: cargo build --release --verbose
+      - name: Build with selinux
+        run: cargo build --release --verbose --features selinux
       - name: Run check
-        run: cargo check --release --verbose
+        run: cargo check --release --verbose --features selinux
       - name: Run tests
-        run: cargo test --release --verbose
+        run: cargo test --release --verbose --features selinux
       # Do a tests with and without -j, because the internal modes of operation are quite different
       - name: Simulate package processing without -j
         if: ${{ matrix.rust == 'nightly' }}
@@ -87,4 +89,6 @@ jobs:
           rustup toolchain install nightly
           rustup default nightly
       - name: Validate clippy
-        run: cargo clippy -- -D warnings
+        run: |
+          cargo clippy -- -D warnings
+          cargo clippy --features selinux -- -D warnings
