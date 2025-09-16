@@ -51,7 +51,9 @@ struct Options {
 }
 
 pub struct Config {
+    #[allow(dead_code)]
     pub root: Option<PathBuf>,  // we need this to do selinux lookups
+
     pub inputs: Vec<PathBuf>,
     pub fatal_errors: bool,
     pub _verbose: u8,
@@ -62,6 +64,7 @@ pub struct Config {
     pub source_date_epoch: Option<time::SystemTime>,
     pub print_selinux_contexts: bool,
 
+    #[cfg(feature = "selinux")]
     pub selinux_labels: Option<selinux::label::Labeler<selinux::label::back_end::File>>,
 }
 
@@ -91,6 +94,7 @@ impl Config {
             root = Some(setup::brp_check(None, &options.inputs)?);
         }
 
+        #[cfg(feature = "selinux")]
         let selinux_labels = if options.ignore_selinux_context {
             None
         } else {
@@ -114,6 +118,7 @@ impl Config {
             source_date_epoch,
             print_selinux_contexts: options.print_selinux_contexts,
 
+            #[cfg(feature = "selinux")]
             selinux_labels,
         })
     }
@@ -133,6 +138,7 @@ impl Config {
             source_date_epoch: None,
             print_selinux_contexts: false,
 
+            #[cfg(feature = "selinux")]
             selinux_labels: None,
         }
     }
