@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::fs;
 
 use super::config::Config;
+#[cfg(feature = "selinux")]
 use super::fcontexts;
 
 #[derive(Debug, Default, PartialEq)]
@@ -68,7 +69,10 @@ enum FileState {
 struct FileInfo {
     path: PathBuf,
     metadata: fs::Metadata,
+
+    #[cfg(feature = "selinux")]
     selinux_context: RefCell<Option<String>>,
+
     hashes: RefCell<Vec<u64>>,
     file_state: RefCell<FileState>,
 }
@@ -78,12 +82,14 @@ impl FileInfo {
         FileInfo {
             path,
             metadata,
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: RefCell::new(vec![]),
             file_state: RefCell::new(FileState::None),
         }
     }
 
+    #[cfg(feature = "selinux")]
     fn set_selinux_context(
         &self,
         labels: &selinux::label::Labeler<selinux::label::back_end::File>,
@@ -176,6 +182,7 @@ impl FileInfo {
 
         // Do SELinux context comparison.
         // The labels are available iff the check wasn't turned off and files are found.
+        #[cfg(feature = "selinux")]
         if let Some(labels) = config.selinux_labels.as_ref() {
             if let Err(e) = self.set_selinux_context(labels, config.root.as_deref()) {
                 return FileInfo::file_error(ino_res, e, config);
@@ -505,6 +512,7 @@ mod tests {
         let a = FileInfo {
             path: file1.path().to_path_buf(),
             metadata: fs::metadata(file1.path()).unwrap(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: vec![1, 2, 3, 4].into(),
             file_state: FileState::Closed.into(),
@@ -513,6 +521,7 @@ mod tests {
         let b = FileInfo {
             path: file2.path().to_path_buf(),
             metadata: fs::metadata(file2.path()).unwrap(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: vec![1, 2, 3, 4].into(),
             file_state: FileState::Closed.into(),
@@ -531,6 +540,7 @@ mod tests {
         let a_again = FileInfo {
             path: "/a/b/c".into(),
             metadata: a.metadata.clone(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::None.into(),
@@ -546,6 +556,7 @@ mod tests {
         let mut b_again = FileInfo {
             path: file2.path().to_path_buf(),
             metadata: fs::metadata(file2.path()).unwrap(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: a.hashes.borrow().clone().into(),
             file_state: FileState::Closed.into(),
@@ -581,6 +592,7 @@ mod tests {
         let a = FileInfo {
             path: "/dev".into(),
             metadata: fs::metadata("/dev").unwrap(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::Closed.into(),
@@ -589,6 +601,7 @@ mod tests {
         let b = FileInfo {
             path: "/proc".into(),
             metadata: fs::metadata("/proc").unwrap(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::Closed.into(),
@@ -598,6 +611,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "selinux")]
     fn compare_selinux_contexts() {
         let labels = match selinux::label::Labeler::new(&[], false) {
             Err(e) => {
@@ -661,6 +675,7 @@ mod tests {
         let a = FileInfo {
             path: file1.path().to_path_buf(),
             metadata: fs::metadata(file1.path()).unwrap(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::None.into(),
@@ -669,6 +684,7 @@ mod tests {
         let b = FileInfo {
             path: file2.path().to_path_buf(),
             metadata: fs::metadata(file2.path()).unwrap(),
+            #[cfg(feature = "selinux")]
             selinux_context: RefCell::new(None),
             hashes: vec![].into(),
             file_state: FileState::None.into(),
@@ -703,6 +719,7 @@ mod tests {
             let a = FileInfo {
                 path: file1.path().to_path_buf(),
                 metadata: fs::metadata(file1.path()).unwrap(),
+                #[cfg(feature = "selinux")]
                 selinux_context: RefCell::new(None),
                 hashes: vec![].into(),
                 file_state: FileState::None.into(),
@@ -711,6 +728,7 @@ mod tests {
             let b = FileInfo {
                 path: file2.path().to_path_buf(),
                 metadata: fs::metadata(file2.path()).unwrap(),
+                #[cfg(feature = "selinux")]
                 selinux_context: RefCell::new(None),
                 hashes: vec![].into(),
                 file_state: FileState::None.into(),

@@ -2,4 +2,5 @@
 
 pub mod config;
 pub mod linkfiles;
+#[cfg(feature = "selinux")]
 pub mod fcontexts;
