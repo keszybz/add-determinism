@@ -5,7 +5,7 @@ use log::{trace, debug, info, warn};
 
 use std::cmp::{min, Ordering};
 use std::hash::{DefaultHasher, Hasher};
-use std::io::Read;
+use std::io::{self, Read};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::cell::RefCell;
@@ -341,12 +341,24 @@ fn process_file_or_dir(
             let entry = match entry {
                 Err(e) => {
                     stats.errors += 1;
-                    if config.fatal_errors {
+
+                    // If fatal errors are enabled, return an error immediately.
+                    // Make an exception for the top-level directory, i.e. the
+                    // command-line argument, when running with --brp. The rpm
+                    // macro calls the program with %_prefix, and if the package
+                    // doesn't install any files there, we'd error out. This
+                    // happened in CI and we don't want this.
+                    if config.fatal_errors &&
+                        !(config.brp &&
+                          e.depth() == 0 &&
+                          e.io_error().is_some_and(
+                             |e| e.kind() == io::ErrorKind::NotFound
+                         )) {
                         return Err(e.into());
-                    } else {
-                        warn!("Failed to process {}: {}", input_path.display(), e);
-                        continue;
                     }
+
+                    warn!("Failed to process {}: {}", input_path.display(), e);
+                    continue;
                 }
                 Ok(entry) => entry
             };
