@@ -26,8 +26,8 @@
 %linkdupes_options %{nil}
 
 # Directories (or files) to process.
-# By default, all installed files under /usr are processed.
-%linkdupes_paths %{buildroot}%{_usr}
+# By default, all installed files under %%_prefix (/usr) are processed.
+%linkdupes_paths %{buildroot}%{_prefix}
 
 %__os_install_post_hardlink \
     %{?__brp_linkdupes:%{__brp_linkdupes} --brp %{?linkdupes_options} %{?linkdupes_paths}} \

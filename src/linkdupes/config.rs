@@ -55,6 +55,7 @@ pub struct Config {
     pub root: Option<PathBuf>,  // we need this to do selinux lookups
 
     pub inputs: Vec<PathBuf>,
+    pub brp: bool,
     pub fatal_errors: bool,
     pub _verbose: u8,
     pub dry_run: bool,
@@ -109,6 +110,7 @@ impl Config {
         Ok(Self {
             root,
             inputs: options.inputs,
+            brp: options.brp,
             fatal_errors: options.brp,
             _verbose: options.verbose,
             dry_run: options.dry_run,
@@ -129,6 +131,7 @@ impl Config {
         Self {
             root: None,
             inputs: vec![],
+            brp: false,
             fatal_errors: false,
             _verbose: 0,
             dry_run: false,
