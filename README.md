@@ -47,7 +47,7 @@ When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be de
 All arguments must be below `$RPM_BUILD_ROOT`.
 This option is intended to be used in rpm macros that define post-install steps.
 See [redhat-rpm-config pull request #293](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/293)
-for a pull request that added a call to `add-det` in `%__os_install_post`.
+for the pull request that added a call to `add-det` in `%__os_install_post`.
 
 #### Verification instead of modification
 
@@ -212,6 +212,8 @@ Some useful options:
 When invoked with `--brp`, the `$RPM_BUILD_ROOT` environment variable must be defined and not empty.
 All arguments must be below `$RPM_BUILD_ROOT`.
 This option is intended to be used in rpm macros that define post-install steps.
+See [redhat-rpm-config pull request #345](https://src.fedoraproject.org/rpms/redhat-rpm-config/pull-request/345)
+for the pull request that added a call to `linkdupes` in `%__os_install_post`.
 
 ## Notes
 
