@@ -172,6 +172,7 @@ log = { version = "0.4", features = ["std"] }
 num-bigint-dig = "0.8.4"
 num-integer = "0.1.46"
 num-traits = "0.2.19"
+rayon = "1.11.0"
 regex = { version = "1.10.0", default-features = false, features = ["std", "perf", "unicode-case"] }
 rlimit = "0.10.2"
 selinux = { version = "0.4.4", optional = true }
