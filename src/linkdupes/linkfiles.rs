@@ -241,6 +241,23 @@ impl FileInfo {
         unreachable!();
     }
 
+    fn compare_for_sorting(
+        &self,
+        other: &FileInfo,
+        config: &Config,
+    ) -> Ordering {
+        // A comparison function that always returns Lesser or
+        // Greater, so that we get a stable sort result.
+        match self.compare(other, config) {
+            Ordering::Equal => {
+                let new = self.path.cmp(&other.path);
+                assert!(new != Ordering::Equal);
+                new
+            }
+            v => v,
+        }
+    }
+
     fn file_error(partial: Ordering, _err: Error, config: &Config) -> Ordering {
         // Either exit the program or return a partial result,
         // depending on what Config says.
@@ -496,7 +513,7 @@ pub fn process_inputs(config: &Config) -> Result<Stats> {
         process_file_or_dir(&mut files_seen, input_path, config, &mut stats)?;
     }
 
-    files_seen.sort_by(|a, b| FileInfo::compare(a, b, config));
+    files_seen.sort_by(|a, b| FileInfo::compare_for_sorting(a, b, config));
 
     link_files(files_seen, config, &mut stats)?;
 
