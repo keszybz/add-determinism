@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Error, Result};
 use log::{trace, debug, info, warn};
+use rayon::prelude::*;
 
 use std::cmp::{min, Ordering};
 use std::hash::{DefaultHasher, Hasher};
@@ -513,7 +514,7 @@ pub fn process_inputs(config: &Config) -> Result<Stats> {
         process_file_or_dir(&mut files_seen, input_path, config, &mut stats)?;
     }
 
-    files_seen.sort_by(|a, b| FileInfo::compare_for_sorting(a, b, config));
+    files_seen.par_sort_unstable_by(|a, b| FileInfo::compare_for_sorting(a, b, config));
 
     link_files(files_seen, config, &mut stats)?;
 
