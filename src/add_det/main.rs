@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     } else if config.check && (stats.inodes_replaced > 0 ||
                                stats.inodes_rewritten > 0) {
         bail!("--check was specified, but some files would have been modified")
-    }  else {
+    } else {
         Ok(())
     }
 }

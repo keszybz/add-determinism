@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use std::fs;
-use std::time;
 #[cfg(target_os = "linux")]
 use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
 use std::os::macos::fs::MetadataExt as _;
+use std::time;
 
 use add_determinism::add_det::handlers;
 
-use crate::common::{invoke, prepare_dir};
 use super::make_handler;
+use crate::common::{invoke, prepare_dir};
 
 #[test]
 fn test_adapters() {

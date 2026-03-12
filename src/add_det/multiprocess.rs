@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 use anyhow::{bail, Result};
+use crossbeam_channel::{Receiver, Sender};
 use log::debug;
-use std::thread;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use crossbeam_channel::{Sender,Receiver};
+use std::thread;
 
 use crate::config;
 use crate::handlers;
@@ -175,7 +175,7 @@ pub fn do_worker_work(
             &job.input_path)
         {
             Ok(res) => stats.add_one(res),
-            Err(_) => { stats.errors += 1 }
+            Err(_) => stats.errors += 1,
         }
     }
 

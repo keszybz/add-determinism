@@ -1,19 +1,19 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-use std::io::Read;
 use std::fs;
 use std::fs::File;
-use std::path::Path;
+use std::io::Read;
 #[cfg(target_os = "linux")]
 use std::os::linux::fs::MetadataExt as _;
 #[cfg(target_os = "macos")]
 use std::os::macos::fs::MetadataExt as _;
+use std::path::Path;
 
 use add_determinism::add_det::handlers;
 use add_determinism::add_det::handlers::pyc;
 
-use crate::common::prepare_dir;
 use super::{make_handler, test_corpus_file};
+use crate::common::prepare_dir;
 
 #[test]
 fn test_pyc_header() {

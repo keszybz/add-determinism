@@ -27,7 +27,7 @@ use num_integer::Integer;
 use num_traits::cast::ToPrimitive;
 use num_traits::{Signed, Zero};
 
-use super::{config, InputOutputHelper, unwrap_os_string};
+use super::{config, unwrap_os_string, InputOutputHelper};
 
 const PYC_MAGIC: &[u8] = &[0x0D, 0x0A];
 const PYLONG_MARSHAL_SHIFT: i32 = 15;
@@ -382,26 +382,26 @@ struct CodeObject {
 
 impl PartialEq for CodeObject {
     fn eq(&self, other: &Self) -> bool {
-        self.argcount == other.argcount &&
-            self.posonlyargcount == other.posonlyargcount &&
-            self.kwonlyargcount == other.kwonlyargcount &&
-            self.nlocals == other.nlocals &&
-            self.stacksize == other.stacksize &&
-            self.flags == other.flags &&
-            self.code == other.code &&
-            self.consts == other.consts &&
-            self.names == other.names &&
-            self.varnames == other.varnames &&
-            self.freevars == other.freevars &&
-            self.cellvars == other.cellvars &&
-            self.localsplusnames == other.localsplusnames &&
-            self.localspluskinds == other.localspluskinds &&
-            self.filename == other.filename &&
-            self.name == other.name &&
-            self.qualname == other.qualname &&
-            self.firstlineno == other.firstlineno &&
-            self.linetable == other.linetable &&
-            self.exceptiontable == other.exceptiontable
+        self.argcount == other.argcount
+            && self.posonlyargcount == other.posonlyargcount
+            && self.kwonlyargcount == other.kwonlyargcount
+            && self.nlocals == other.nlocals
+            && self.stacksize == other.stacksize
+            && self.flags == other.flags
+            && self.code == other.code
+            && self.consts == other.consts
+            && self.names == other.names
+            && self.varnames == other.varnames
+            && self.freevars == other.freevars
+            && self.cellvars == other.cellvars
+            && self.localsplusnames == other.localsplusnames
+            && self.localspluskinds == other.localspluskinds
+            && self.filename == other.filename
+            && self.name == other.name
+            && self.qualname == other.qualname
+            && self.firstlineno == other.firstlineno
+            && self.linetable == other.linetable
+            && self.exceptiontable == other.exceptiontable
     }
 }
 
@@ -569,19 +569,19 @@ impl Hash for StringObject {
 impl fmt::Display for StringObject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.variant {
-            StringVariant::ShortAscii |
-            StringVariant::ShortAsciiInterned |
-            StringVariant::Unicode |
-            StringVariant::Ascii |
-            StringVariant::AsciiInterned => {
+            StringVariant::ShortAscii
+            | StringVariant::ShortAsciiInterned
+            | StringVariant::Unicode
+            | StringVariant::Ascii
+            | StringVariant::AsciiInterned => {
                 if let Ok(string) = str::from_utf8(&self.bytes) {
                     write!(f, "{:?}", string)
                 } else {
                     write!(f, "[NON-UTF8] {:?}", self.bytes)
                 }
             }
-            StringVariant::String |
-            StringVariant::Interned => {
+            StringVariant::String
+            | StringVariant::Interned => {
                 write!(f, "{:?}", self.bytes)
             }
         }
@@ -596,7 +596,7 @@ impl StringObject {
         suffix: &str,
         _multiline: bool,
         show_flag: bool,
-) -> fmt::Result
+    ) -> fmt::Result
     where
         W: fmt::Write,
     {
@@ -719,14 +719,14 @@ impl SeqObject {
             w, "{:>width$}{end}{}{suffix}",
             "",
             format_flag(show_flag, &self.flag_num).unwrap_or("".to_string()),
-            width=multiline as usize * indent,
+            width = multiline as usize * indent,
         )
     }
 
     fn need_multiline(&self, max_nesting: u8) -> bool {
-        max_nesting == 0 ||
-            self.items.len() > 10 ||
-            self.items.iter().any(|x| x.need_multiline(max_nesting - 1))
+        max_nesting == 0
+            || self.items.len() > 10
+            || self.items.iter().any(|x| x.need_multiline(max_nesting - 1))
     }
 }
 
@@ -752,8 +752,10 @@ impl Hash for DictObject {
 
 impl DictObject {
     fn need_multiline(&self, max_nesting: u8) -> bool {
-        max_nesting == 0 ||
-            self.items.iter().any(|(x, y)| x.need_multiline(max_nesting - 1) || y.need_multiline(max_nesting - 1))
+        max_nesting == 0
+            || self.items.iter().any(|(x, y)| {
+                x.need_multiline(max_nesting - 1) || y.need_multiline(max_nesting - 1)
+            })
     }
 }
 
@@ -768,9 +770,9 @@ struct SliceObject {
 
 impl PartialEq for SliceObject {
     fn eq(&self, other: &Self) -> bool {
-        self.start == other.start &&
-            self.stop == other.stop &&
-            self.step == other.step
+        self.start == other.start
+            && self.stop == other.stop
+            && self.step == other.step
     }
 }
 
@@ -975,18 +977,18 @@ impl Object {
         match self {
             Object::Code(..) => true,
             Object::Ref(..) => false,
-            Object::Slice(..) |
-            Object::Long(..) |
-            Object::Int(..) |
-            Object::Null(..) |
-            Object::None(..) |
-            Object::True(..) |
-            Object::False(..) |
-            Object::StopIteration(..) |
-            Object::Ellipsis(..) |
-            Object::Float(..) |
-            Object::Complex(..) |
-            Object::String(..) => false,
+            Object::Slice(..)
+            | Object::Long(..)
+            | Object::Int(..)
+            | Object::Null(..)
+            | Object::None(..)
+            | Object::True(..)
+            | Object::False(..)
+            | Object::StopIteration(..)
+            | Object::Ellipsis(..)
+            | Object::Float(..)
+            | Object::Complex(..)
+            | Object::String(..) => false,
             Object::Seq(v) => v.need_multiline(max_nesting),
             Object::Dict(v) => v.need_multiline(max_nesting),
         }
@@ -1285,16 +1287,16 @@ impl PycParser {
     fn read_string(&mut self, variant: StringVariant, flag_num: Option<usize>) -> Result<Rc<Object>> {
         let size = match variant {
             // short == size is stored as one byte
-            StringVariant::ShortAscii |
-            StringVariant::ShortAsciiInterned
-                => self._read_byte()?.1 as usize,
+            StringVariant::ShortAscii
+            | StringVariant::ShortAsciiInterned =>
+                self._read_byte()?.1 as usize,
             // non-short == size is stored as long (4 bytes)
-            StringVariant::String |
-            StringVariant::Interned |
-            StringVariant::Unicode |
-            StringVariant::Ascii |
-            StringVariant::AsciiInterned
-                => self._read_long()? as usize,
+            StringVariant::String
+            | StringVariant::Interned
+            | StringVariant::Unicode
+            | StringVariant::Ascii
+                | StringVariant::AsciiInterned =>
+                self._read_long()? as usize,
         };
 
         let offset = self.take(size)?;
@@ -1469,10 +1471,10 @@ impl PycWriter {
                 // Those end up in the index
                 Object::Code(v) => {
                     self.write_code(v);
-                },
+                }
                 Object::String(v) => {
                     self.write_string(v);
-                },
+                }
                 Object::Seq(v) => {
                     self.write_seq(v);
                 }
@@ -1481,7 +1483,6 @@ impl PycWriter {
                 }
                 Object::Dict(_) => todo!(),
                 // mind null termination!
-
                 Object::Long(v, _) => {
                     self.write_long(v);
                 }
@@ -1506,16 +1507,16 @@ impl PycWriter {
                 Object::None(_) => {
                     return self.buffer.push(b'N');
                 }
-                Object::False(_) =>  {
+                Object::False(_) => {
                     return self.buffer.push(b'F');
                 }
-                Object::True(_) =>  {
+                Object::True(_) => {
                     return self.buffer.push(b'T');
                 }
-                Object::StopIteration(_) =>  {
+                Object::StopIteration(_) => {
                     return self.buffer.push(b'S');
                 }
-                Object::Ellipsis(_) =>  {
+                Object::Ellipsis(_) => {
                     return self.buffer.push(b'.');
                 }
             }
@@ -1583,18 +1584,16 @@ impl PycWriter {
         let len = string.bytes.len();
         match string.variant {
             // short == size is stored as one byte
-            StringVariant::ShortAscii |
-            StringVariant::ShortAsciiInterned => {
-                self.buffer.push(len as u8);
-            }
+            StringVariant::ShortAscii
+            | StringVariant::ShortAsciiInterned =>
+                self.buffer.push(len as u8),
             // non-short == size is stored as long (4 bytes)
-            StringVariant::String |
-            StringVariant::Interned |
-            StringVariant::Unicode |
-            StringVariant::Ascii |
-            StringVariant::AsciiInterned => {
-                self._write_int(len as u32);
-            }
+            StringVariant::String
+            | StringVariant::Interned
+            | StringVariant::Unicode
+            | StringVariant::Ascii
+            | StringVariant::AsciiInterned =>
+                self._write_int(len as u32),
         };
 
         self.buffer.extend_from_slice(&string.bytes);

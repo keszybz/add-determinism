@@ -2,5 +2,5 @@
 
 pub mod add_det;
 pub mod linkdupes;
-pub mod simplelog;
 pub mod setup;
+pub mod simplelog;

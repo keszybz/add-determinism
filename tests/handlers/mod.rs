@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 mod test_ar;
+mod test_gzip;
 mod test_jar;
 mod test_javadoc;
-mod test_gzip;
 mod test_pyc;
 mod test_pyc_zero_mtime;
 
@@ -13,8 +13,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use add_determinism::add_det::{config, handlers};
 use crate::common::{init, prepare_dir};
+use add_determinism::add_det::{config, handlers};
 
 fn make_handler(
     source_date_epoch: i64,
