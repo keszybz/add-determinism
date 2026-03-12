@@ -119,11 +119,13 @@ impl super::Processor for Ar {
                 debug!("{}: file {:?}, mtime={}, {}:{}, mode={:o}, size={}",
                        io.input_path.display(), name, mtime, uid, gid, mode, size);
 
-                if self.config.source_date_epoch.is_some() && mtime > self.config.source_date_epoch.unwrap() {
-                    let source_date_epoch_str = format!("{:<12}", self.config.source_date_epoch.unwrap());
+                if let Some(source_date_epoch) = self.config.source_date_epoch {
+                    if mtime > source_date_epoch {
+                        let source_date_epoch_str = format!("{:<12}", source_date_epoch);
 
-                    buf[16..28].copy_from_slice(source_date_epoch_str.as_bytes());
-                    have_mod = true;
+                        buf[16..28].copy_from_slice(source_date_epoch_str.as_bytes());
+                        have_mod = true;
+                    }
                 }
 
                 if uid != 0 || gid != 0 {
