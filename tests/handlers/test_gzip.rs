@@ -5,8 +5,8 @@ use std::os::linux::fs::MetadataExt;
 use add_determinism::add_det::handlers;
 use add_determinism::add_det::handlers::gzip;
 
-use crate::common::prepare_dir;
 use super::make_handler;
+use crate::common::prepare_dir;
 
 #[test]
 fn test_empty() {

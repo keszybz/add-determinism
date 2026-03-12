@@ -9,8 +9,8 @@ use std::os::macos::fs::MetadataExt as _;
 use add_determinism::add_det::handlers;
 use add_determinism::add_det::handlers::javadoc;
 
-use crate::common::prepare_dir;
 use super::make_handler;
+use crate::common::prepare_dir;
 
 #[test]
 fn test_javadoc_example() {

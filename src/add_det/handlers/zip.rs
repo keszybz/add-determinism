@@ -24,9 +24,10 @@ pub struct Zip {
 }
 
 impl Zip {
-    fn boxed(config: &Arc<config::Config>, extension: &'static str)
-             -> Box<dyn super::Processor + Send + Sync>
-    {
+    fn boxed(
+        config: &Arc<config::Config>,
+        extension: &'static str,
+    ) -> Box<dyn super::Processor + Send + Sync> {
         Box::new(Self {
             extension,
             config: config.clone(),

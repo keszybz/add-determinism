@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 mod config;
-mod linkfiles;
 #[cfg(feature = "selinux")]
 mod fcontexts;
+mod linkfiles;
 
 #[cfg(not(feature = "selinux"))]
 use anyhow::bail;

@@ -3,13 +3,13 @@
 use anyhow::{bail, Error, Result};
 use log::{trace, debug, info, warn};
 
+use std::cell::RefCell;
 use std::cmp::{min, Ordering};
+use std::fs;
 use std::hash::{DefaultHasher, Hasher};
 use std::io::{self, Read};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::cell::RefCell;
-use std::fs;
 
 use super::config::Config;
 #[cfg(feature = "selinux")]
