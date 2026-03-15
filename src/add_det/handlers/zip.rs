@@ -45,6 +45,13 @@ impl Zip {
     }
 }
 
+fn format_ts(timestamp: zip::DateTime) -> [u8; 4] {
+    let (dp, tp) = (timestamp.datepart(), timestamp.timepart());
+    let [tp_lo, tp_hi] = tp.to_le_bytes();
+    let [dp_lo, dp_hi] = dp.to_le_bytes();
+    [tp_lo, tp_hi, dp_lo, dp_hi]
+}
+
 impl super::Processor for Zip {
     fn name(&self) -> &str {
         self.extension
@@ -86,15 +93,21 @@ impl super::Processor for Zip {
         drop(output);
 
         if let Some(dos_epoch) = self.dos_epoch {
-            let ts: [u8; 4] = [
-                (dos_epoch.timepart() & 0xFF).try_into().unwrap(),
-                (dos_epoch.timepart() >> 8).try_into().unwrap(),
-                (dos_epoch.datepart() & 0xFF).try_into().unwrap(),
-                (dos_epoch.datepart() >> 8).try_into().unwrap(),
-            ];
+            let unix_epoch = self.unix_epoch.unwrap();
+            let ts = format_ts(dos_epoch);
+
+            // Figure out a bogus timestamp that is not exactly equal
+            // to the real one. If unix_epoch is too small, fall back
+            // to zero. We need to subtract two seconds, because the
+            // timestamp has granularity of two seconds.
+            let unix_epoch_m_2 = unix_epoch.saturating_sub(2 * time::Duration::SECOND);
+            let dos_epoch_m_2 = zip::DateTime::try_from(unix_epoch_m_2).unwrap_or(dos_epoch);
+            let ts_m_2 = format_ts(dos_epoch_m_2);
 
             debug!("Epoch converted to zip::DateTime: {dos_epoch:?}");
             debug!("Epoch as buffer: {ts:?}");
+            debug!("Epoch for .clj converted to zip::DateTime: {dos_epoch_m_2:?}");
+            debug!("Epoch for .clj as buffer: {ts_m_2:?}");
 
             // Open output again to adjust timestamps
             let output_path = io.output.as_ref().unwrap().path().to_path_buf();
@@ -114,10 +127,16 @@ impl super::Processor for Zip {
                               e);
                     }
                     Ok(mtime) => {
-                        debug!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, self.unix_epoch,
-                               mtime > self.unix_epoch.unwrap());
+                        let threshold = if file.name().ends_with(".clj") && ts_m_2 != ts {
+                            &unix_epoch_m_2
+                        } else {
+                            &unix_epoch
+                        };
 
-                        if mtime > self.unix_epoch.unwrap() {
+                        debug!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, self.unix_epoch,
+                               if mtime > *threshold { "mtime needs updating" } else { "mtime is fine" });
+
+                        if mtime > *threshold {
                             let header_offset = file.header_start();
 
                             debug!("{}: {}: seeking to 0x{:08x} (local file header)",
@@ -130,8 +149,10 @@ impl super::Processor for Zip {
                             overwrite.read_exact(&mut buf)?;
                             assert_eq!(buf[..4], FILE_HEADER_MAGIC);
 
+                            // Use the bogus reduced timestamp for Clojure .clj files
+                            let ts_ref = if file.name().ends_with(".clj") { &ts_m_2 } else { &ts };
                             // We write at offset header_start + 10
-                            overwrite.write_all(&ts)?;
+                            overwrite.write_all(ts_ref)?;
 
                             let header_offset = file.central_header_start();
 
@@ -146,7 +167,7 @@ impl super::Processor for Zip {
                             assert_eq!(buf[..4], CENTRAL_HEADER_FILE_MAGIC);
 
                             // We write at offset header_start + 12
-                            overwrite.write_all(&ts)?;
+                            overwrite.write_all(ts_ref)?;
 
                             have_mod = true;
                         }
