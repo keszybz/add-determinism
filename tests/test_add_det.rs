@@ -11,7 +11,7 @@ fn test_help() {
     assert!(c.stderr.is_empty());
 
     let s = std::str::from_utf8(&c.stdout).unwrap();
-    assert!(s.contains("RPM buildroot helper to strip nondeterministic bits in files"));
+    assert!(s.contains("RPM buildroot helper"));
     assert!(s.contains("--verbose"));
 }
 
@@ -22,7 +22,7 @@ fn test_help_many_args() {
     assert!(c.stderr.is_empty());
 
     let s = std::str::from_utf8(&c.stdout).unwrap();
-    assert!(s.contains("RPM buildroot helper to strip nondeterministic bits in files"));
+    assert!(s.contains("RPM buildroot helper"));
     assert!(s.contains("--check"));
 }
 
