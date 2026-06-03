@@ -89,7 +89,8 @@ impl super::Processor for Zip {
             output.raw_copy_file(file)?;
         }
 
-        output.finish()?;
+        let mut output = output.finish()?;
+        output.flush()?;
         drop(output);
 
         if let Some(dos_epoch) = self.dos_epoch {
@@ -119,7 +120,8 @@ impl super::Processor for Zip {
             for i in 0..output.len() {
                 let file = output.by_index(i)?;
 
-                match file.last_modified().to_time() {
+                let Some(last_modified) = file.last_modified() else { continue };
+                match time::OffsetDateTime::try_from(last_modified) {
                     Err(e) => {
                         warn!("{}: component {}: {}",
                               input_path.display(),
