@@ -50,7 +50,7 @@ mod tests {
             Ok(labels) => labels
         };
 
-        assert_eq!(lookup_context(&labels, None, &Path::new("/")).unwrap(),
+        assert_eq!(lookup_context(&labels, None, Path::new("/")).unwrap(),
                    "system_u:object_r:root_t:s0");
     }
 }

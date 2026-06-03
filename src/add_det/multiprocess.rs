@@ -73,7 +73,7 @@ impl Controller {
         assert!(selected_handlers > 0);
 
         let job = Job { selected_handlers, input_path: input_path.to_path_buf() };
-        debug!("Sending {:?}", &job);
+        debug!("Sending {:?}", job);
         self.job_tx.send(Some(job))?;
 
         Ok(())
@@ -104,7 +104,7 @@ impl Controller {
 
         for _ in 0..self.config.jobs.unwrap() {
             let stats = self.answer_rx.recv()?;
-            debug!("Got result: {:?}", &stats);
+            debug!("Got result: {:?}", stats);
             total.add(&stats);
         }
 

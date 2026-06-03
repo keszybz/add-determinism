@@ -532,8 +532,8 @@ mod tests {
         let mut file1 = tempfile::NamedTempFile::new().unwrap();
         let mut file2 = tempfile::NamedTempFile::new().unwrap();
 
-        file1.write(b"0").unwrap();
-        file2.write(b"0").unwrap();
+        file1.write_all(b"0").unwrap();
+        file2.write_all(b"0").unwrap();
 
         let ts = file2.as_file().metadata().unwrap().modified().unwrap();
         file1.as_file().set_modified(ts).unwrap();
@@ -656,8 +656,8 @@ mod tests {
         let mut file1 = tempfile::NamedTempFile::new().unwrap();
         let mut file2 = tempfile::NamedTempFile::new().unwrap();
 
-        file1.write(b"0").unwrap();
-        file2.write(b"0").unwrap();
+        file1.write_all(b"0").unwrap();
+        file2.write_all(b"0").unwrap();
 
         let ts = file2.as_file().metadata().unwrap().modified().unwrap();
         file1.as_file().set_modified(ts).unwrap();
@@ -695,11 +695,11 @@ mod tests {
         let mut file1 = tempfile::NamedTempFile::new().unwrap();
         let mut file2 = tempfile::NamedTempFile::new().unwrap();
 
-        file1.write(b"0").unwrap();
-        file2.write(b"0").unwrap();
+        file1.write_all(b"0").unwrap();
+        file2.write_all(b"0").unwrap();
 
-        fs::set_permissions(file1.path(), fs::Permissions::from_mode(0u32)).unwrap();
-        fs::set_permissions(file2.path(), fs::Permissions::from_mode(0u32)).unwrap();
+        fs::set_permissions(file1.path(), fs::Permissions::from_mode(0o0u32)).unwrap();
+        fs::set_permissions(file2.path(), fs::Permissions::from_mode(0o0u32)).unwrap();
 
         let a = FileInfo {
             path: file1.path().to_path_buf(),
@@ -736,12 +736,12 @@ mod tests {
         let mut file1 = tempfile::NamedTempFile::new().unwrap();
         let mut file2 = tempfile::NamedTempFile::new().unwrap();
 
-        for (size, chunk_count) in vec![(0, 0), (4, 1), (4092, 1), (4096, 2), (4096*9, 4)] {
+        for (size, chunk_count) in [(0, 0), (4, 1), (4092, 1), (4096, 2), (4096*9, 4)] {
             if size > 0 {
                 let data = Vec::from_iter(std::iter::repeat_n(66u8, size));
-                file1.write(&data).unwrap();
+                file1.write_all(&data).unwrap();
                 file1.flush().unwrap();
-                file2.write(&data).unwrap();
+                file2.write_all(&data).unwrap();
                 file2.flush().unwrap();
             }
 

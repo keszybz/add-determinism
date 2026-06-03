@@ -60,11 +60,11 @@ fn test_adapters() {
 
     let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
-    assert!(pyc.filter(&*input).unwrap());
+    assert!(pyc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+    assert_eq!(pyc.process(&input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -79,11 +79,11 @@ fn test_adapters_hardlinked() {
 
     let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
-    assert!(pyc.filter(&*input).unwrap());
+    assert!(pyc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    fs::hard_link(&*input, (*input).with_extension("pyc.evenbetter")).unwrap();
+    fs::hard_link(&*input, input.with_extension("pyc.evenbetter")).unwrap();
 
     let mut data_expected = vec![];
     File::open("tests/cases/adapters.cpython-312~fixed.pyc")
@@ -91,7 +91,7 @@ fn test_adapters_hardlinked() {
         .read_to_end(&mut data_expected)
         .unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Rewritten);
+    assert_eq!(pyc.process(&input).unwrap(), handlers::ProcessResult::Rewritten);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -111,11 +111,11 @@ fn test_adapters_opt_1() {
 
     let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
-    assert!(pyc.filter(&*input).unwrap());
+    assert!(pyc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+    assert_eq!(pyc.process(&input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -131,11 +131,11 @@ fn test_adapters_fixed() {
 
     let pyc = make_handler(111, false, pyc::Pyc::boxed).unwrap();
 
-    assert!(pyc.filter(&*input).unwrap());
+    assert!(pyc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
+    assert_eq!(pyc.process(&input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());

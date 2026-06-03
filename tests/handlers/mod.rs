@@ -55,7 +55,7 @@ impl handlers::Processor for Trivial {
 fn test_input_output_helper_drop() {
     let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
-    let (mut helper, _) = handlers::InputOutputHelper::open(&*input, false, false).unwrap();
+    let (mut helper, _) = handlers::InputOutputHelper::open(&input, false, false).unwrap();
     helper.open_output(false).unwrap();
 
     let output_path = helper.output.as_ref().unwrap().path().to_path_buf();
@@ -69,7 +69,7 @@ fn test_input_output_helper_drop() {
 fn test_input_output_helper_drop_no_file() {
     let (_dir, input) = prepare_dir("tests/cases/libempty.a").unwrap();
 
-    let (mut helper, _) = handlers::InputOutputHelper::open(&*input, true, false).unwrap();
+    let (mut helper, _) = handlers::InputOutputHelper::open(&input, true, false).unwrap();
     helper.open_output(false).unwrap();
 
     let output_path = helper.output.as_ref().unwrap().path().to_path_buf();
@@ -166,12 +166,12 @@ fn test_corpus_file(handler: Box<dyn handlers::Processor>, filename: &str) {
                 .append(true)
                 .open(&*input)
                 .unwrap()
-                .write(&[b'x', b'y', b'_', b'_'])
+                .write_all(b"xy__")
                 .unwrap();
     }
 
-    assert!(handler.filter(&*input).unwrap());
-    assert_eq!(handler.process(&*input).unwrap(), have_mod);
+    assert!(handler.filter(&input).unwrap());
+    assert_eq!(handler.process(&input).unwrap(), have_mod);
 
     let mut data_expected = vec![];
     fs::File::open(
@@ -186,5 +186,5 @@ fn test_corpus_file(handler: Box<dyn handlers::Processor>, filename: &str) {
     assert_eq!(data_output, data_expected);
 
     // Check that rerun does not result in any modifications
-    assert_eq!(handler.process(&*input).unwrap(), handlers::ProcessResult::Noop);
+    assert_eq!(handler.process(&input).unwrap(), handlers::ProcessResult::Noop);
 }

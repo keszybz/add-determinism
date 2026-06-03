@@ -27,11 +27,11 @@ fn test_adapters() {
 
     let pyc = make_handler(111, false, handlers::pyc::PycZeroMtime::boxed).unwrap();
 
-    assert!(pyc.filter(&*input).unwrap());
+    assert!(pyc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(pyc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+    assert_eq!(pyc.process(&input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
