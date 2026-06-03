@@ -90,5 +90,5 @@ jobs:
           rustup default nightly
       - name: Validate clippy
         run: |
-          cargo clippy -- -D warnings
-          cargo clippy --features selinux -- -D warnings
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --features selinux -- -D warnings
