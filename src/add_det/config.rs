@@ -190,31 +190,31 @@ mod tests {
 
     #[test]
     fn test_filter_by_name() {
-        assert_eq!(filter_by_name("x", true, &vec!["x", "y"]), true);
-        assert_eq!(filter_by_name("x", true, &vec!["x"]), true);
-        assert_eq!(filter_by_name("x", true, &vec![]), true);
-        assert_eq!(filter_by_name("x", true, &vec!["-x"]), false);
-        assert_eq!(filter_by_name("x", true, &vec!["-y"]), true);
+        assert!(filter_by_name("x", true, &["x", "y"]));
+        assert!(filter_by_name("x", true, &["x"]));
+        assert!(filter_by_name("x", true, &[]));
+        assert!(!filter_by_name("x", true, &["-x"]));
+        assert!(filter_by_name("x", true, &["-y"]));
 
-        assert_eq!(filter_by_name("x", false, &vec!["x", "y"]), true);
-        assert_eq!(filter_by_name("x", false, &vec!["x"]), true);
-        assert_eq!(filter_by_name("x", false, &vec![]), false);
-        assert_eq!(filter_by_name("x", false, &vec!["-x"]), false);
-        assert_eq!(filter_by_name("x", false, &vec!["-y"]), false);
+        assert!(filter_by_name("x", false, &["x", "y"]));
+        assert!(filter_by_name("x", false, &["x"]));
+        assert!(!filter_by_name("x", false, &[]));
+        assert!(!filter_by_name("x", false, &["-x"]));
+        assert!(!filter_by_name("x", false, &["-y"]));
     }
 
     #[test]
     fn test_requested_handlers() {
-        let (list, strict) = requested_handlers(&vec![]).unwrap();
+        let (list, strict) = requested_handlers(&[]).unwrap();
         assert_eq!(list, vec!["ar", "jar", "javadoc", "gzip", "pyc", "zip"]);
-        assert_eq!(strict, false);
+        assert!(!strict);
 
-        let (list, strict) = requested_handlers(&vec!["ar", "pyc-zero-mtime"]).unwrap();
+        let (list, strict) = requested_handlers(&["ar", "pyc-zero-mtime"]).unwrap();
         assert_eq!(list, vec!["ar", "pyc-zero-mtime"]);
-        assert_eq!(strict, true);
+        assert!(strict);
 
-        let (list, strict) = requested_handlers(&vec!["-pyc-zero-mtime"]).unwrap();
+        let (list, strict) = requested_handlers(&["-pyc-zero-mtime"]).unwrap();
         assert_eq!(list, vec!["ar", "jar", "javadoc", "gzip", "pyc", "zip"]);
-        assert_eq!(strict, true);
+        assert!(strict);
     }
 }

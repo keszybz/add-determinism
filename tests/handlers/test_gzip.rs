@@ -14,15 +14,15 @@ fn test_empty() {
 
     let handler = make_handler(1234567, false, gzip::Gzip::boxed).unwrap();
 
-    assert!(handler.filter(&*input).unwrap());
+    assert!(handler.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(handler.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+    assert_eq!(handler.process(&input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.modified().unwrap(), new.modified().unwrap());
     assert_ne!(orig.st_ino(), new.st_ino());
 
-    assert_eq!(handler.process(&*input).unwrap(), handlers::ProcessResult::Noop);
+    assert_eq!(handler.process(&input).unwrap(), handlers::ProcessResult::Noop);
 }

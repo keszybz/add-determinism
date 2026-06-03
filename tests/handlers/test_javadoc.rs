@@ -18,11 +18,11 @@ fn test_javadoc_example() {
 
     let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
-    assert!(javadoc.filter(&*input).unwrap());
+    assert!(javadoc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+    assert_eq!(javadoc.process(&input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -40,11 +40,11 @@ fn test_javadoc_fixed() {
 
     let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
-    assert!(javadoc.filter(&*input).unwrap());
+    assert!(javadoc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
+    assert_eq!(javadoc.process(&input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -58,11 +58,11 @@ fn test_invalid_utf8() {
 
     let javadoc = make_handler(1704106800, false, javadoc::Javadoc::boxed).unwrap();
 
-    assert!(javadoc.filter(&*input).unwrap());
+    assert!(javadoc.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(javadoc.process(&*input).unwrap(), handlers::ProcessResult::Noop);
+    assert_eq!(javadoc.process(&input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());

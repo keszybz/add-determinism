@@ -20,11 +20,11 @@ fn test_libempty() {
 
     let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
 
-    assert!(ar.filter(&*input).unwrap());
+    assert!(ar.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Noop);
+    assert_eq!(ar.process(&input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -39,11 +39,11 @@ fn test_testrelro() {
     let cfg = Arc::new(config::Config::empty(111, false));
     let ar = ar::Ar::boxed(&cfg);
 
-    assert!(ar.filter(&*input).unwrap());
+    assert!(ar.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+    assert_eq!(ar.process(&input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     // because of timestamp granularity, creation ts might be equal
@@ -59,11 +59,11 @@ fn test_testrelro_check() {
     let cfg = Arc::new(config::Config::empty(111, true));
     let ar = ar::Ar::boxed(&cfg);
 
-    assert!(ar.filter(&*input).unwrap());
+    assert!(ar.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Replaced);
+    assert_eq!(ar.process(&input).unwrap(), handlers::ProcessResult::Replaced);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -77,13 +77,13 @@ fn test_testrelro_hardlinked() {
 
     let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
 
-    assert!(ar.filter(&*input).unwrap());
+    assert!(ar.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    fs::hard_link(&*input, (*input).with_extension("b")).unwrap();
+    fs::hard_link(&*input, input.with_extension("b")).unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Rewritten);
+    assert_eq!(ar.process(&input).unwrap(), handlers::ProcessResult::Rewritten);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -97,13 +97,13 @@ fn test_testrelro_hardlinked_check() {
 
     let ar = make_handler(111, true, ar::Ar::boxed).unwrap();
 
-    assert!(ar.filter(&*input).unwrap());
+    assert!(ar.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    fs::hard_link(&*input, (*input).with_extension("b")).unwrap();
+    fs::hard_link(&*input, input.with_extension("b")).unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Rewritten);
+    assert_eq!(ar.process(&input).unwrap(), handlers::ProcessResult::Rewritten);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -117,11 +117,11 @@ fn test_testrelro_c() {
 
     let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
 
-    assert!(!ar.filter(&*input).unwrap());
+    assert!(!ar.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert!(ar.process(&*input).is_err());
+    assert!(ar.process(&input).is_err());
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
@@ -135,11 +135,11 @@ fn test_testrelro_fixed() {
 
     let ar = make_handler(111, false, ar::Ar::boxed).unwrap();
 
-    assert!(ar.filter(&*input).unwrap());
+    assert!(ar.filter(&input).unwrap());
 
     let orig = input.metadata().unwrap();
 
-    assert_eq!(ar.process(&*input).unwrap(), handlers::ProcessResult::Noop);
+    assert_eq!(ar.process(&input).unwrap(), handlers::ProcessResult::Noop);
 
     let new = input.metadata().unwrap();
     assert_eq!(orig.created().unwrap(), new.created().unwrap());
