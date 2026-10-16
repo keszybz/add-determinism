@@ -162,24 +162,24 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.12"
-chrono = "0.4.35"
-clap = { version = "4.4.18", features = ["derive"] }
-crossbeam-channel = "0.5.15"
-indoc = "2.0.4"
-itertools = "0.14.0"
+anyhow = "1.0.104"
+chrono = "0.4.45"
+clap = { version = "4.6.7", features = ["derive"] }
+crossbeam-channel = "0.5.17"
+indoc = "2.0.8"
+itertools = "0.15.0"
 log = { version = "0.4", features = ["std"] }
-num-bigint-dig = "0.8.4"
-num-integer = "0.1.46"
+num-bigint-dig = "0.9.1"
+num-integer = "0.1.47"
 num-traits = "0.2.19"
-regex = { version = "1.10.0", default-features = false, features = ["std", "perf", "unicode-case"] }
+regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case"] }
 rlimit = ">=0.10.2,<0.12"
-selinux = { version = "0.4.4", optional = true }
-tempfile = "3.20"
-thiserror = "1.0.61"
-time = "0.3.34"
+selinux = { version = "0.6.3", optional = true }
+tempfile = "3.27"
+thiserror = "2.0.21"
+time = "0.3.55"
 walkdir = "2.5.0"
-zip = { version = "5", default-features = false, features = ["deflate", "deflate-flate2-zlib-rs", "time"] }
+zip = { version = "9", default-features = false, features = ["deflate", "deflate-flate2-zlib-rs", "time", "unreserved"] }
 
 [profile.release]
 lto = true
@@ -188,8 +188,8 @@ codegen-units = 1
 panic = "abort"
 
 [build-dependencies]
-anyhow = "1.0.12"
-glob = "0.3.1"
+anyhow = "1.0.104"
+glob = "0.3.4"
 
 [dev-dependencies]
 executable-path = "1.0.1"
