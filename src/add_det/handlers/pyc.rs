@@ -9,11 +9,11 @@
 
 use anyhow::{bail, Context, Result};
 use log::{debug, warn};
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-use std::hash::{Hash, Hasher};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{self, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -34,6 +34,23 @@ const PYLONG_MARSHAL_SHIFT: i32 = 15;
 const FLAG_REF_BIT: u8 = 0x1 << 7;
 
 const TRACE: bool = false;
+
+/// Hash `hash_fields` once and memoize the result in `cache`.
+///
+/// Objects are immutable once constructed. Caching avoids rehashing a code
+/// object's whole subtree on every PycWriter.seen lookup.
+fn cached_hash<H, F>(cache: &OnceCell<u64>, state: &mut H, hash_fields: F)
+where
+    H: Hasher,
+    F: FnOnce(&mut DefaultHasher),
+{
+    let hash = *cache.get_or_init(|| {
+        let mut hasher = DefaultHasher::new();
+        hash_fields(&mut hasher);
+        hasher.finish()
+    });
+    state.write_u64(hash);
+}
 
 pub fn pyc_python_version(buf: &[u8; 4]) -> Result<((u32, u32), usize)> {
     /*
@@ -378,6 +395,7 @@ struct CodeObject {
     exceptiontable: Option<Rc<Object>>,
 
     flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
+    hash: OnceCell<u64>,
 }
 
 impl PartialEq for CodeObject {
@@ -407,26 +425,28 @@ impl PartialEq for CodeObject {
 
 impl Hash for CodeObject {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.argcount.hash(state);
-        self.posonlyargcount.hash(state);
-        self.kwonlyargcount.hash(state);
-        self.nlocals.hash(state);
-        self.stacksize.hash(state);
-        self.flags.hash(state);
-        self.code.hash(state);
-        self.consts.hash(state);
-        self.names.hash(state);
-        self.varnames.hash(state);
-        self.freevars.hash(state);
-        self.cellvars.hash(state);
-        self.localsplusnames.hash(state);
-        self.localspluskinds.hash(state);
-        self.filename.hash(state);
-        self.name.hash(state);
-        self.qualname.hash(state);
-        self.firstlineno.hash(state);
-        self.linetable.hash(state);
-        self.exceptiontable.hash(state);
+        cached_hash(&self.hash, state, |state| {
+            self.argcount.hash(state);
+            self.posonlyargcount.hash(state);
+            self.kwonlyargcount.hash(state);
+            self.nlocals.hash(state);
+            self.stacksize.hash(state);
+            self.flags.hash(state);
+            self.code.hash(state);
+            self.consts.hash(state);
+            self.names.hash(state);
+            self.varnames.hash(state);
+            self.freevars.hash(state);
+            self.cellvars.hash(state);
+            self.localsplusnames.hash(state);
+            self.localspluskinds.hash(state);
+            self.filename.hash(state);
+            self.name.hash(state);
+            self.qualname.hash(state);
+            self.firstlineno.hash(state);
+            self.linetable.hash(state);
+            self.exceptiontable.hash(state);
+        });
     }
 }
 
@@ -550,6 +570,7 @@ struct StringObject {
     bytes: Vec<u8>,
 
     flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
+    hash: OnceCell<u64>,
 }
 
 impl PartialEq for StringObject {
@@ -561,8 +582,10 @@ impl PartialEq for StringObject {
 
 impl Hash for StringObject {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.variant.hash(state);
-        self.bytes.hash(state);
+        cached_hash(&self.hash, state, |state| {
+            self.variant.hash(state);
+            self.bytes.hash(state);
+        });
     }
 }
 
@@ -622,6 +645,7 @@ struct SeqObject {
     items: Vec<Rc<Object>>,
 
     flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
+    hash: OnceCell<u64>,
 }
 
 impl PartialEq for SeqObject {
@@ -633,8 +657,10 @@ impl PartialEq for SeqObject {
 
 impl Hash for SeqObject {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.variant.hash(state);
-        self.items.hash(state);
+        cached_hash(&self.hash, state, |state| {
+            self.variant.hash(state);
+            self.items.hash(state);
+        });
     }
 }
 
@@ -736,6 +762,7 @@ struct DictObject {
 
     #[allow(dead_code)]
     flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
+    hash: OnceCell<u64>,
 }
 
 impl PartialEq for DictObject {
@@ -746,7 +773,7 @@ impl PartialEq for DictObject {
 
 impl Hash for DictObject {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.items.hash(state);
+        cached_hash(&self.hash, state, |state| self.items.hash(state));
     }
 }
 
@@ -766,6 +793,7 @@ struct SliceObject {
     step: Rc<Object>,
 
     flag_num: Option<usize>, // filled in when the object was stored with a flag_ref
+    hash: OnceCell<u64>,
 }
 
 impl PartialEq for SliceObject {
@@ -778,9 +806,11 @@ impl PartialEq for SliceObject {
 
 impl Hash for SliceObject {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.start.hash(state);
-        self.stop.hash(state);
-        self.step.hash(state);
+        cached_hash(&self.hash, state, |state| {
+            self.start.hash(state);
+            self.stop.hash(state);
+            self.step.hash(state);
+        });
     }
 }
 
@@ -1241,6 +1271,7 @@ impl PycParser {
             linetable: self.read_object()?,
             exceptiontable: self.maybe_read_object(self.version >= (3, 11))?,
             flag_num,
+            hash: OnceCell::new(),
         }).into())
     }
 
@@ -1304,6 +1335,7 @@ impl PycParser {
             variant,
             bytes: self.data[offset .. offset + size].to_vec(),
             flag_num,
+            hash: OnceCell::new(),
         }).into())
     }
 
@@ -1313,7 +1345,7 @@ impl PycParser {
             items.push(self.read_object()?);
         }
 
-        Ok(Object::Seq(SeqObject { variant, items, flag_num }).into())
+        Ok(Object::Seq(SeqObject { variant, items, flag_num, hash: OnceCell::new() }).into())
     }
 
     fn read_small_tuple(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
@@ -1391,7 +1423,7 @@ impl PycParser {
             items.push((key, value));
         }
 
-        Ok(Object::Dict(DictObject { items, flag_num } ).into())
+        Ok(Object::Dict(DictObject { items, flag_num, hash: OnceCell::new() } ).into())
     }
 
     fn read_slice(&mut self, flag_num: Option<usize>) -> Result<Rc<Object>> {
@@ -1399,7 +1431,7 @@ impl PycParser {
         let stop = self.read_object()?;
         let step = self.read_object()?;
 
-        Ok(Object::Slice(SliceObject { start, stop, step, flag_num } ).into())
+        Ok(Object::Slice(SliceObject { start, stop, step, flag_num, hash: OnceCell::new() } ).into())
     }
 
     fn set_zero_mtime(&mut self) -> Result<bool> {
@@ -1702,11 +1734,10 @@ impl PycWriter {
     }
 
     fn add_ref_flags(&mut self) {
-        let mut keys: Vec<_> = self.seen.keys().collect();
-        keys.sort_by_key(|&e| self.seen[e].0);
+        let mut entries: Vec<_> = self.seen.iter().collect();
+        entries.sort_by_key(|(_, (offset, _, _))| *offset);
 
-        for entry in keys {
-            let (offset, count, index) = &self.seen[entry];
+        for (entry, (offset, count, index)) in entries {
             assert!(index.borrow().is_none());
 
             if *count > 0 {
@@ -1890,7 +1921,6 @@ impl super::Processor for PycZeroMtime {
 
 #[cfg(test)]
 mod tests {
-    use std::hash::{DefaultHasher, Hasher};
     use super::*;
 
     #[test]
@@ -1918,6 +1948,7 @@ mod tests {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112].to_vec(),
                             flag_num: Some(43),
+                            hash: OnceCell::new(),
                         }
                     ).into(),
                     Object::String(
@@ -1925,10 +1956,12 @@ mod tests {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112, 115].to_vec(),
                             flag_num: Some(44),
+                            hash: OnceCell::new(),
                         }
                     ).into(),
                 ].to_vec(),
                 flag_num: None,
+                hash: OnceCell::new(),
             }
         );
         let seq2 = Object::Seq(
@@ -1940,6 +1973,7 @@ mod tests {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112].to_vec(),
                             flag_num: None,
+                            hash: OnceCell::new(),
                         }
                     ).into(),
                     Object::String(
@@ -1947,10 +1981,12 @@ mod tests {
                             variant: StringVariant::ShortAsciiInterned,
                             bytes: [104, 116, 116, 112, 115].to_vec(),
                             flag_num: None,
+                            hash: OnceCell::new(),
                         }
                     ).into(),
                 ].to_vec(),
                 flag_num: Some(43),
+                hash: OnceCell::new(),
             }
         );
 
@@ -1978,6 +2014,7 @@ mod tests {
                         variant: StringVariant::ShortAsciiInterned,
                         bytes: [104, 116, 116, 112].to_vec(),
                         flag_num: Some(43),
+                        hash: OnceCell::new(),
                     },
                 ).into(),
                 flag_num: Some(99),
@@ -1988,6 +2025,7 @@ mod tests {
                 variant: StringVariant::ShortAsciiInterned,
                 bytes: [104, 116, 116, 112].to_vec(),
                 flag_num: None,
+                hash: OnceCell::new(),
             },
         );
 
