@@ -34,8 +34,8 @@ pub enum Error {
     #[error("unexpected EOF, cannot take {1} bytes at offset 0x{0:x}")]
     UnexpectedEOF(u64, usize),
 
-    #[error("wrong magic at offset {0}\n        (have \"{}\", exp. \"{}\")",
-            asciify(.1), asciify(.2))]
+    #[error("wrong magic at offset {0}\n        (have \"{have}\", exp. \"{exp}\")",
+            have = asciify(.1), exp = asciify(.2))]
     BadMagic(u64, Vec<u8>, &'static [u8]),
 
     #[error("{0}")]

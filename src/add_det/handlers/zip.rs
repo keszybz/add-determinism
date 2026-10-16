@@ -45,6 +45,10 @@ impl Zip {
     }
 }
 
+fn to_primitive(t: time::OffsetDateTime) -> time::PrimitiveDateTime {
+    time::PrimitiveDateTime::new(t.date(), t.time())
+}
+
 fn format_ts(timestamp: zip::DateTime) -> [u8; 4] {
     let (dp, tp) = (timestamp.datepart(), timestamp.timepart());
     let [tp_lo, tp_hi] = tp.to_le_bytes();
@@ -62,7 +66,7 @@ impl super::Processor for Zip {
             None => bail!("{} handler requires $SOURCE_DATE_EPOCH to be set", self.extension),
             Some(v) => time::OffsetDateTime::from_unix_timestamp(v).unwrap(),
         };
-        let dos_epoch = zip::DateTime::try_from(unix_epoch)?;
+        let dos_epoch = zip::DateTime::try_from(to_primitive(unix_epoch))?;
 
         self.unix_epoch = Some(unix_epoch);
         self.dos_epoch = Some(dos_epoch);
@@ -102,7 +106,7 @@ impl super::Processor for Zip {
             // to zero. We need to subtract two seconds, because the
             // timestamp has granularity of two seconds.
             let unix_epoch_m_2 = unix_epoch.saturating_sub(2 * time::Duration::SECOND);
-            let dos_epoch_m_2 = zip::DateTime::try_from(unix_epoch_m_2).unwrap_or(dos_epoch);
+            let dos_epoch_m_2 = zip::DateTime::try_from(to_primitive(unix_epoch_m_2)).unwrap_or(dos_epoch);
             let ts_m_2 = format_ts(dos_epoch_m_2);
 
             debug!("Epoch converted to zip::DateTime: {dos_epoch:?}");
@@ -121,21 +125,23 @@ impl super::Processor for Zip {
                 let file = output.by_index(i)?;
 
                 let Some(last_modified) = file.last_modified() else { continue };
-                match time::OffsetDateTime::try_from(last_modified) {
+                let name = String::from_utf8_lossy(file.name_raw());
+                let is_clj = file.name_raw().ends_with(b".clj");
+                match time::PrimitiveDateTime::try_from(last_modified).map(|t| t.assume_utc()) {
                     Err(e) => {
                         warn!("{}: component {}: {}",
                               input_path.display(),
-                              file.name(),
+                              name,
                               e);
                     }
                     Ok(mtime) => {
-                        let threshold = if file.name().ends_with(".clj") && ts_m_2 != ts {
+                        let threshold = if is_clj && ts_m_2 != ts {
                             &unix_epoch_m_2
                         } else {
                             &unix_epoch
                         };
 
-                        debug!("File {}: {}\n  {:?} {:?} {}", i, file.name(), mtime, self.unix_epoch,
+                        debug!("File {}: {}\n  {:?} {:?} {}", i, name, mtime, self.unix_epoch,
                                if mtime > *threshold { "mtime needs updating" } else { "mtime is fine" });
 
                         if mtime > *threshold {
@@ -143,7 +149,7 @@ impl super::Processor for Zip {
 
                             debug!("{}: {}: seeking to 0x{:08x} (local file header)",
                                    output_path.display(),
-                                   file.name(),
+                                   name,
                                    header_offset);
 
                             overwrite.seek(SeekFrom::Start(header_offset))?;
@@ -152,7 +158,7 @@ impl super::Processor for Zip {
                             assert_eq!(buf[..4], FILE_HEADER_MAGIC);
 
                             // Use the bogus reduced timestamp for Clojure .clj files
-                            let ts_ref = if file.name().ends_with(".clj") { &ts_m_2 } else { &ts };
+                            let ts_ref = if is_clj { &ts_m_2 } else { &ts };
                             // We write at offset header_start + 10
                             overwrite.write_all(ts_ref)?;
 
@@ -160,7 +166,7 @@ impl super::Processor for Zip {
 
                             debug!("{}: {}: seeking to 0x{:08x} (central file header)",
                                    output_path.display(),
-                                   file.name(),
+                                   name,
                                    header_offset);
 
                             overwrite.seek(SeekFrom::Start(header_offset))?;
