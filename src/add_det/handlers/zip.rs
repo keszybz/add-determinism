@@ -2,8 +2,7 @@
 
 use anyhow::{bail, Result};
 use log::{debug, warn};
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 use time;
@@ -49,6 +48,12 @@ fn to_primitive(t: time::OffsetDateTime) -> time::PrimitiveDateTime {
     time::PrimitiveDateTime::new(t.date(), t.time())
 }
 
+fn patch_ts(buf: &mut [u8], header_offset: u64, magic: &[u8; 4], ts_offset: usize, ts: &[u8; 4]) {
+    let header = &mut buf[header_offset as usize..];
+    assert_eq!(header[..4], *magic);
+    header[ts_offset..ts_offset + 4].copy_from_slice(ts);
+}
+
 fn format_ts(timestamp: zip::DateTime) -> [u8; 4] {
     let (dp, tp) = (timestamp.datepart(), timestamp.timepart());
     let [tp_lo, tp_hi] = tp.to_le_bytes();
@@ -80,22 +85,22 @@ impl super::Processor for Zip {
 
     fn process(&self, input_path: &Path) -> Result<super::ProcessResult> {
         let mut have_mod = false;
-        let (mut io, input) = InputOutputHelper::open(input_path, self.config.check, true)?;
-        let mut input = zip::ZipArchive::new(input)?;
+        let (mut io, mut input) = InputOutputHelper::open(input_path, self.config.check, true)?;
 
-        io.open_output(true)?;
+        // Work on in-memory buffers: the zip reader seeks around for
+        // every entry, which on a file means several syscalls per entry.
+        let mut data = Vec::with_capacity(io.input_metadata.len() as usize);
+        input.read_to_end(&mut data)?;
+        let mut input = zip::ZipArchive::new(Cursor::new(data))?;
 
-        let output = BufWriter::new(io.output.as_ref().unwrap().as_file());
-        let mut output = zip::ZipWriter::new(output);
+        let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
 
         for i in 0..input.len() {
             let file = input.by_index(i)?;
             output.raw_copy_file(file)?;
         }
 
-        let mut output = output.finish()?;
-        output.flush()?;
-        drop(output);
+        let mut output = output.finish()?.into_inner();
 
         if let Some(dos_epoch) = self.dos_epoch {
             let unix_epoch = self.unix_epoch.unwrap();
@@ -114,15 +119,12 @@ impl super::Processor for Zip {
             debug!("Epoch for .clj converted to zip::DateTime: {dos_epoch_m_2:?}");
             debug!("Epoch for .clj as buffer: {ts_m_2:?}");
 
-            // Open output again to adjust timestamps
-            let output_path = io.output.as_ref().unwrap().path().to_path_buf();
-            let mut output =
-                zip::ZipArchive::new(BufReader::new(File::open(&output_path)?))?;
+            // Reparse the output to find timestamps to adjust, then patch the buffer.
+            let mut patches = vec![];
+            let mut archive = zip::ZipArchive::new(Cursor::new(&output[..]))?;
 
-            let overwrite = io.output.as_mut().unwrap().as_file_mut();
-
-            for i in 0..output.len() {
-                let file = output.by_index(i)?;
+            for i in 0..archive.len() {
+                let file = archive.by_index(i)?;
 
                 let Some(last_modified) = file.last_modified() else { continue };
                 let name = String::from_utf8_lossy(file.name_raw());
@@ -145,42 +147,28 @@ impl super::Processor for Zip {
                                if mtime > *threshold { "mtime needs updating" } else { "mtime is fine" });
 
                         if mtime > *threshold {
-                            let header_offset = file.header_start();
-
-                            debug!("{}: {}: seeking to 0x{:08x} (local file header)",
-                                   output_path.display(),
+                            debug!("{}: {}: local header at 0x{:08x}, central header at 0x{:08x}",
+                                   input_path.display(),
                                    name,
-                                   header_offset);
-
-                            overwrite.seek(SeekFrom::Start(header_offset))?;
-                            let mut buf = [0; 10];
-                            overwrite.read_exact(&mut buf)?;
-                            assert_eq!(buf[..4], FILE_HEADER_MAGIC);
+                                   file.header_start(),
+                                   file.central_header_start());
 
                             // Use the bogus reduced timestamp for Clojure .clj files
-                            let ts_ref = if is_clj { &ts_m_2 } else { &ts };
-                            // We write at offset header_start + 10
-                            overwrite.write_all(ts_ref)?;
-
-                            let header_offset = file.central_header_start();
-
-                            debug!("{}: {}: seeking to 0x{:08x} (central file header)",
-                                   output_path.display(),
-                                   name,
-                                   header_offset);
-
-                            overwrite.seek(SeekFrom::Start(header_offset))?;
-                            let mut buf = [0; 12];
-                            overwrite.read_exact(&mut buf)?;
-                            assert_eq!(buf[..4], CENTRAL_HEADER_FILE_MAGIC);
-
-                            // We write at offset header_start + 12
-                            overwrite.write_all(ts_ref)?;
+                            let ts_ref = if is_clj { ts_m_2 } else { ts };
+                            patches.push((file.header_start(), file.central_header_start(), ts_ref));
 
                             have_mod = true;
                         }
                     }
                 }
+            }
+            drop(archive);
+
+            for (local_offset, central_offset, ts_ref) in patches {
+                // The timestamp is at offset 10 in the local file header
+                // and at offset 12 in the central file header.
+                patch_ts(&mut output, local_offset, &FILE_HEADER_MAGIC, 10, &ts_ref);
+                patch_ts(&mut output, central_offset, &CENTRAL_HEADER_FILE_MAGIC, 12, &ts_ref);
             }
         }
 
@@ -197,8 +185,13 @@ impl super::Processor for Zip {
                 // check if the rewritten file has different size,
                 // which indicates that we dropped some metadata.
 
-                have_mod = io.output.as_mut().unwrap().as_file_mut().metadata()?.len() != io.input_metadata.len();
+                have_mod = output.len() as u64 != io.input_metadata.len();
             }
+
+        if have_mod {
+            io.open_output(false)?;
+            io.output.as_mut().unwrap().as_file_mut().write_all(&output)?;
+        }
 
         io.finalize(have_mod)
     }
